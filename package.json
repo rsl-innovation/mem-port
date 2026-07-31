@@ -1,9 +1,17 @@
 {
   "name": "@rsl-innovation/mem-port",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A portable, long-term agentic memory MCP server — a thumb drive for your AI context.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rsl-innovation/mem-port.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rsl-innovation/mem-port/issues"
+  },
+  "homepage": "https://github.com/rsl-innovation/mem-port#readme",
   "engines": {
     "node": ">=20"
   },
