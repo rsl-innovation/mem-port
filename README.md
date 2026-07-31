@@ -6,6 +6,8 @@ Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, silo
 
 Unlike other memory-for-agents projects, mem-port needs **no external services** — no Postgres, no Qdrant, no Neo4j. It's one process, one embedded [SurrealDB](https://surrealdb.com) instance combining graph storage and vector search, and zero-config local semantic search (no API key required).
 
+Connecting a client (below) gives it the *ability* to use mem-port; for more detailed, tunable instructions on what it should actually save and when — including keeping personal/team/project memory in separate scopes — see **[MEMORY_GUIDE.md](./MEMORY_GUIDE.md)**.
+
 ## Quick start
 
 ```bash
