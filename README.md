@@ -25,14 +25,15 @@ The rest of this README uses `mem-port <command>` for brevity. If you didn't ins
 
 ### Connecting from Claude Code
 
-Easiest: use the CLI (`--header` accepts any number of `Key: Value` pairs):
+Easiest: use the CLI (`--header` accepts any number of `Key: Value` pairs). Add `--scope user` so the server is available in every project on this machine, not just the one you happen to be in when you run the command — the default `local` scope ties it to a single project directory:
 
 ```bash
 claude mcp add --transport http mem-port http://127.0.0.1:8787/mcp \
-  --header "library-id: my-personal-workspace"
+  --header "library-id: my-personal-workspace" \
+  --scope user
 ```
 
-Or add it directly to `.mcp.json` (project scope, shareable via version control) or `~/.claude.json` (user scope). The `type` field is required — an entry with a `url` but no `type` is treated as a misconfigured stdio server:
+Or add it directly to `~/.claude.json` (user scope, applies everywhere) or `.mcp.json` (project scope, shareable via version control with that repo's team). The `type` field is required — an entry with a `url` but no `type` is treated as a misconfigured stdio server:
 
 ```json
 {
@@ -54,7 +55,8 @@ The extension shares the exact same MCP configuration as the CLI (`.mcp.json` / 
 
 ```bash
 claude mcp add --transport http mem-port http://127.0.0.1:8787/mcp \
-  --header "library-id: my-personal-workspace"
+  --header "library-id: my-personal-workspace" \
+  --scope user
 ```
 
 This requires the [standalone `claude` CLI](https://code.claude.com/docs/en/setup) to be installed — the extension bundles its own private copy for the chat panel and does *not* put `claude` on your terminal PATH, so `claude mcp add` won't work in the integrated terminal until you install the CLI separately. Editing `.mcp.json` directly (the JSON block above) works too and doesn't need the CLI.
