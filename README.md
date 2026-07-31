@@ -76,6 +76,10 @@ Any client that supports Streamable HTTP with custom headers can connect the sam
 }
 ```
 
+### Getting your copilot to use it proactively
+
+Connecting the server gives your copilot the *ability* to save/recall memory — the server's MCP `instructions` and tool descriptions already nudge any client toward using it proactively. For more explicit control (and for keeping personal/organizational/project memory in separate `library-id` scopes instead of one bucket), see [MEMORY_GUIDE.md](./MEMORY_GUIDE.md) for instructions to paste into your copilot's own custom-instructions file.
+
 ## Tools
 
 | Tool | Purpose |

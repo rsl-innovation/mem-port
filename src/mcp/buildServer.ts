@@ -11,8 +11,16 @@ import { registerForgetMemory } from "./tools/forgetMemory.js";
 import { registerExportLibrary } from "./tools/exportLibrary.js";
 import { registerImportLibrary } from "./tools/importLibrary.js";
 
+const SERVER_INSTRUCTIONS = `mem-port is a persistent, cross-session knowledge graph for this library-id — not a scratch pad you write to only when asked.
+
+Proactively call save_memory whenever you learn a durable fact, preference, decision, or task about the user or their work, in the same turn you learn it — don't wait for an explicit "remember this." Link related people/projects/tools via entity_refs so context stays connected in the graph.
+
+Proactively call search_memory at the start of a task that could be informed by prior context, before assuming none exists.
+
+Don't save: information already derivable from the current codebase/files, one-off task state that's only relevant to this conversation, or anything the user has asked you not to keep.`;
+
 export function buildServer(root: Surreal, embeddings: EmbeddingProvider, dataDir: string): McpServer {
-  const server = new McpServer({ name: "mem-port", version: "0.1.0" });
+  const server = new McpServer({ name: "mem-port", version: "0.1.0" }, { instructions: SERVER_INSTRUCTIONS });
 
   registerSaveMemory(server, root, embeddings);
   registerSearchMemory(server, root, embeddings);

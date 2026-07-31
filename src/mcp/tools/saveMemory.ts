@@ -11,7 +11,8 @@ export function registerSaveMemory(server: McpServer, root: Surreal, embeddings:
   server.registerTool(
     "save_memory",
     {
-      description: "Save a new memory to the library for later recall.",
+      description:
+        "Save a durable memory (fact/preference/decision/task/reference) for later recall. Call this proactively whenever you learn something worth remembering about the user or their work — do not wait for an explicit 'remember this' request.",
       inputSchema: {
         content: z.string().min(1).describe("The memory content to save"),
         memory_type: z.enum(MEMORY_TYPES).optional().describe("Defaults to 'fact'"),

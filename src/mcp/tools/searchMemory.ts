@@ -18,7 +18,8 @@ export function registerSearchMemory(server: McpServer, root: Surreal, embedding
   server.registerTool(
     "search_memory",
     {
-      description: "Semantically search memories by meaning, ranked by relevance.",
+      description:
+        "Semantically search memories by meaning, ranked by relevance. Call this proactively at the start of a task that could be informed by prior context — before assuming none exists, not only when the user asks you to recall something.",
       inputSchema: {
         query: z.string().min(1),
         memory_types: z.array(z.enum(MEMORY_TYPES)).optional(),
