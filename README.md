@@ -2,7 +2,7 @@
 
 A local MCP (Model Context Protocol) server for portable, long-term agentic memory — a thumb drive for your AI context.
 
-Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, skills, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere.
+Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. The usual workaround — copy-pasting context, summaries, or exported notes from one agent into another — only captures a snapshot frozen at the moment you made it. From there the copies drift: each agent keeps learning on its own, nothing keeps the copies in sync, and the longer you go the more your copilots disagree about what's actually true. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, skills, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere. Every connected copilot reads and writes the same graph, so there's nothing to paste and nothing to drift.
 
 Unlike other memory-for-agents projects, mem-port needs **no external services** — no Postgres, no Qdrant, no Neo4j. It's one process, one embedded [SurrealDB](https://surrealdb.com) instance combining graph storage and vector search, and zero-config local semantic search (no API key required).
 
@@ -224,6 +224,11 @@ npm run build       # tsup -> dist/, what npx @rsl-innovation/mem-port actually 
 npm run dev &
 ./scripts/smoke.sh
 ```
+
+## Gotchas
+
+- **mem-port is a localhost server — it only works with clients running on the same machine.** Web/cloud-hosted chat sessions (e.g. chatgpt.com or claude.ai in a browser tab) run server-side and have no route to `127.0.0.1` on your computer, so they can't reach mem-port no matter how it's configured. To connect ChatGPT, Claude, or similar tools, install their **desktop app** and add mem-port there — the desktop app runs locally and can reach the daemon, whereas the same account's web session cannot.
+- Claude Code's CLI and VS Code extension both run locally already, so they work out of the box (see the connection instructions above) — this gotcha mainly matters for tools you might otherwise only use through a browser.
 
 ## Known limitations (v1)
 
