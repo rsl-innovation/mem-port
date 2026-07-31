@@ -1,5 +1,5 @@
 {
-  "name": "mem-port",
+  "name": "@rsl-innovation/mem-port",
   "version": "0.1.0",
   "description": "A portable, long-term agentic memory MCP server — a thumb drive for your AI context.",
   "type": "module",
@@ -7,8 +7,11 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
-    "mem-port": "./bin/mem-port.js"
+    "mem-port": "bin/mem-port.js"
   },
   "files": [
     "bin",

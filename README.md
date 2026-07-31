@@ -9,7 +9,7 @@ Unlike other memory-for-agents projects, mem-port needs **no external services**
 ## Quick start
 
 ```bash
-npx mem-port serve
+npx @rsl-innovation/mem-port serve
 ```
 
 This starts a daemon on `http://127.0.0.1:8787/mcp`. Point any MCP client at it over Streamable HTTP, with a `library-id` header identifying your workspace. Every copilot that connects with the same `library-id` shares the same memory; different `library-id`s are fully isolated from each other (each maps to its own SurrealDB namespace/database) — there's no cross-tenant leakage.
@@ -101,7 +101,7 @@ npm install
 npm run dev        # start the daemon with tsx, no build step
 npm test           # vitest: tenancy isolation + export/import round-trip
 npm run typecheck
-npm run build       # tsup -> dist/, what npx mem-port actually runs
+npm run build       # tsup -> dist/, what npx @rsl-innovation/mem-port actually runs
 ```
 
 `scripts/smoke.sh` is a plain-curl smoke test against a already-running daemon (no Node/Inspector dependency, usable in CI):
