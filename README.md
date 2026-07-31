@@ -92,6 +92,73 @@ mem-port import --library-id my-personal-workspace --in ./my-personal-workspace-
 
 `import` defaults to `--mode merge` (dedupes entities by name+type, memories/episodes by content hash — importing the same bundle twice is a no-op). Pass `--mode overwrite` to wipe the target library first, or `--dry-run` to see what would happen without writing anything.
 
+## Running persistently
+
+`mem-port serve` runs in the foreground — it's a long-lived daemon, not a one-shot command, so it blocks whatever terminal started it and dies when that terminal closes. If your MCP client can't connect (`ECONNREFUSED 127.0.0.1:8787`), that's almost always the reason: nothing is actually listening. Check with `lsof -i :8787`.
+
+For a quick session, background it: `mem-port serve &` (or `nohup mem-port serve > ~/.mem-port.log 2>&1 &` to survive closing the terminal). For something that survives reboots and restarts itself if it ever crashes, set it up as a proper background service.
+
+### macOS (launchd)
+
+```bash
+which node        # note this path
+which mem-port     # note this path too, then resolve the symlink:
+readlink -f "$(which mem-port)"   # -> .../lib/node_modules/@rsl-innovation/mem-port/bin/mem-port.js
+```
+
+Write `~/Library/LaunchAgents/com.rsl-innovation.mem-port.plist`, substituting the two paths above. **Invoke `node` directly with the resolved script path — don't point `ProgramArguments` at the `mem-port` shim itself.** `launchd` doesn't inherit your shell's PATH, so the shim's `#!/usr/bin/env node` shebang fails with `env: node: No such file or directory` when launchd runs it:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rsl-innovation.mem-port</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>/usr/local/lib/node_modules/@rsl-innovation/mem-port/bin/mem-port.js</string>
+        <string>serve</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/mem-port.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/Library/Logs/mem-port.error.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.rsl-innovation.mem-port.plist   # start now + on every login
+launchctl bootout gui/$(id -u)/com.rsl-innovation.mem-port                                  # stop and unregister
+tail -f ~/Library/Logs/mem-port.log ~/Library/Logs/mem-port.error.log                       # logs
+```
+
+### Linux (systemd --user)
+
+```ini
+# ~/.config/systemd/user/mem-port.service
+[Unit]
+Description=mem-port
+
+[Service]
+ExecStart=/usr/bin/node /path/to/lib/node_modules/@rsl-innovation/mem-port/bin/mem-port.js serve
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user enable --now mem-port
+journalctl --user -u mem-port -f
+```
+
 ## Configuration
 
 | Env var | Default | Purpose |
