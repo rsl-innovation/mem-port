@@ -169,6 +169,14 @@ launchctl bootout gui/$(id -u)/com.rsl-innovation.mem-port                      
 tail -f ~/Library/Logs/mem-port.log ~/Library/Logs/mem-port.error.log                       # logs
 ```
 
+To pick up a new version after `npm install -g @rsl-innovation/mem-port`, restart the running job in place — no need to unload/reload the plist:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.rsl-innovation.mem-port
+```
+
+To stop it and start it again later, use `bootout`/`bootstrap` (above) rather than `launchctl stop` — this plist's `KeepAlive` is unconditionally `true`, so a plain `stop` gets immediately relaunched by launchd. `bootout` actually unregisters the job, and `bootstrap` registers and starts it again.
+
 ### Linux (systemd --user)
 
 ```ini
