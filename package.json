@@ -1,0 +1,38 @@
+{
+  "name": "mem-port",
+  "version": "0.1.0",
+  "description": "A portable, long-term agentic memory MCP server — a thumb drive for your AI context.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "mem-port": "./bin/mem-port.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
+    "dev": "tsx src/cli.ts serve",
+    "test": "MEM_PORT_MODEL_CACHE_DIR=$PWD/.test-model-cache vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@surrealdb/node": "^3.0.3",
+    "@huggingface/transformers": "^4.2.0",
+    "surrealdb": "^2.0.8",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
