@@ -8,6 +8,7 @@ import { exportBundle } from "../../port/exportBundle.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 const HEADER_NAME = "library-id";
+const MEMORY_TYPES = ["fact", "preference", "decision", "task", "reference"] as const;
 
 export function registerExportLibrary(
   server: McpServer,
@@ -20,8 +21,15 @@ export function registerExportLibrary(
     {
       description: "Export this library to a portable .memport.json bundle file — for backup, moving to a new machine, or sharing with someone else.",
       inputSchema: {
-        memory_types: z.array(z.string()).optional().describe("Only export memories of these types"),
-        since: z.string().datetime().optional().describe("Only export memories created at/after this time"),
+        memory_types: z
+          .array(z.enum(MEMORY_TYPES))
+          .optional()
+          .describe('Only export memories of these types, e.g. ["decision", "reference"]. Omit to export all memory types.'),
+        since: z
+          .string()
+          .datetime()
+          .optional()
+          .describe("ISO 8601 timestamp — only export memories created at or after this time. Omit to export the full history."),
       },
     },
     async (args, extra) => {

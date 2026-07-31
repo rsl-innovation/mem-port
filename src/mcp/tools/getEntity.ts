@@ -25,8 +25,13 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
     {
       description: "Get an entity by name or id, along with memories/episodes that mention it and related entities.",
       inputSchema: {
-        name: z.string().optional(),
-        id: z.string().optional(),
+        name: z.string().optional().describe("Exact entity name to look up, e.g. \"Alice\". Provide this or 'id', not both."),
+        id: z
+          .string()
+          .optional()
+          .describe(
+            'Exact entity record id, e.g. "entity:abc123" (as returned by save_memory/save_episode/relate_entities). Provide this or \'name\', not both.'
+          ),
       },
     },
     async (args, extra) => {

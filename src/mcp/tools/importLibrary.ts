@@ -12,11 +12,32 @@ export function registerImportLibrary(server: McpServer, root: Surreal): void {
     {
       description: "Import a .memport.json bundle into this library.",
       inputSchema: {
-        bundle_path: z.string().optional().describe("Path to a .memport.json file"),
-        bundle: z.record(z.string(), z.unknown()).optional().describe("Inline bundle, alternative to bundle_path"),
-        mode: z.enum(["merge", "overwrite"]).default("merge"),
-        on_conflict: z.enum(["skip", "update"]).optional().describe("Defaults to 'skip'"),
-        dry_run: z.boolean().optional(),
+        bundle_path: z
+          .string()
+          .optional()
+          .describe(
+            'Absolute path to a .memport.json file on disk (as returned by export_library), e.g. "/Users/me/Library/Application Support/mem-port/exports/personal-1234.memport.json". Provide this or \'bundle\', not both.'
+          ),
+        bundle: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("The bundle's JSON contents directly, as an alternative to bundle_path — use when you already have the bundle in memory rather than as a file on disk."),
+        mode: z
+          .enum(["merge", "overwrite"])
+          .default("merge")
+          .describe(
+            "'merge' dedupes against what's already in this library (entities by name+type, memories/episodes by content) and only adds what's new. 'overwrite' deletes everything in this library first, then imports the bundle fresh."
+          ),
+        on_conflict: z
+          .enum(["skip", "update"])
+          .optional()
+          .describe(
+            "In 'merge' mode, what to do when a record already exists: 'skip' leaves the existing record untouched (default), 'update' overwrites it with the bundle's version."
+          ),
+        dry_run: z
+          .boolean()
+          .optional()
+          .describe("If true, reports what would be created/updated/skipped without writing anything — use to preview an import before committing to it."),
       },
     },
     async (args, extra) => {

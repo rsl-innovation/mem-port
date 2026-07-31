@@ -14,11 +14,36 @@ export function registerSaveMemory(server: McpServer, root: Surreal, embeddings:
       description:
         "Save a durable memory (fact/preference/decision/task/reference) for later recall. Call this proactively whenever you learn something worth remembering about the user or their work — do not wait for an explicit 'remember this' request.",
       inputSchema: {
-        content: z.string().min(1).describe("The memory content to save"),
-        memory_type: z.enum(MEMORY_TYPES).optional().describe("Defaults to 'fact'"),
-        importance: z.number().min(0).max(1).optional().describe("0-1, defaults to 0.5"),
-        entity_refs: z.array(z.string()).optional().describe("Entity names this memory mentions; created if new"),
-        source_episode_id: z.string().optional().describe("Record id of the episode this memory was derived from"),
+        content: z
+          .string()
+          .min(1)
+          .describe(
+            "The memory content, as a self-contained statement — it will be read later without this conversation's context. E.g. \"User prefers dark mode in all editors\" or \"Decided to use SurrealDB instead of Postgres because it combines graph and vector search in one embedded process.\""
+          ),
+        memory_type: z
+          .enum(MEMORY_TYPES)
+          .optional()
+          .describe(
+            "'fact' (objective info about the user/project), 'preference' (how the user likes things done), 'decision' (a choice made and why), 'task' (outstanding or ongoing work), or 'reference' (pointer to an external doc/resource). Defaults to 'fact'."
+          ),
+        importance: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe("Subjective priority from 0 (trivial) to 1 (critical — a hard constraint or strong preference). Defaults to 0.5."),
+        entity_refs: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Names of people, projects, or tools this memory is about, e.g. ["Alice", "checkout-service"]. Each is created as a new entity if it doesn\'t already exist, and linked to this memory so it shows up in get_entity.'
+          ),
+        source_episode_id: z
+          .string()
+          .optional()
+          .describe(
+            'The record id of the episode this memory was derived from, e.g. "episode:abc123" (as returned by save_episode). Omit if this memory wasn\'t derived from a specific recorded episode.'
+          ),
       },
     },
     async (args, extra) => {

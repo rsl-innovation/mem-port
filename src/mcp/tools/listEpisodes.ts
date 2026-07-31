@@ -17,10 +17,14 @@ export function registerListEpisodes(server: McpServer, root: Surreal): void {
     {
       description: "List recorded episodes, newest first, optionally filtered by source or time range.",
       inputSchema: {
-        since: z.string().datetime().optional(),
-        until: z.string().datetime().optional(),
-        source: z.string().optional(),
-        limit: z.number().int().min(1).max(200).optional(),
+        since: z
+          .string()
+          .datetime()
+          .optional()
+          .describe('ISO 8601 timestamp — only include episodes that occurred at or after this time, e.g. "2026-07-01T00:00:00Z".'),
+        until: z.string().datetime().optional().describe("ISO 8601 timestamp — only include episodes that occurred at or before this time."),
+        source: z.string().optional().describe('Only include episodes recorded by this exact source, e.g. "claude-code".'),
+        limit: z.number().int().min(1).max(200).optional().describe("Maximum number of episodes to return, newest first. Defaults to 20."),
       },
     },
     async (args, extra) => {
