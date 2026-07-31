@@ -32,6 +32,18 @@ const memorySchema = z.object({
   contentHash: z.string(),
 });
 
+const skillSchema = z.object({
+  ref: z.string(),
+  name: z.string(),
+  description: z.string(),
+  content: z.string(),
+  tags: z.array(z.string()).default([]),
+  source: z.string(),
+  status: z.string(),
+  embedding: z.array(z.number()).nullable().optional(),
+  contentHash: z.string(),
+});
+
 const mentionsEdgeSchema = z.object({
   type: z.literal("mentions"),
   fromRef: z.string(),
@@ -65,6 +77,7 @@ export const bundleSchema = z.object({
   entities: z.array(entitySchema),
   episodes: z.array(episodeSchema),
   memories: z.array(memorySchema),
+  skills: z.array(skillSchema).default([]),
   edges: z.array(edgeSchema),
 });
 
@@ -72,4 +85,5 @@ export type Bundle = z.infer<typeof bundleSchema>;
 export type BundleEntity = z.infer<typeof entitySchema>;
 export type BundleEpisode = z.infer<typeof episodeSchema>;
 export type BundleMemory = z.infer<typeof memorySchema>;
+export type BundleSkill = z.infer<typeof skillSchema>;
 export type BundleEdge = z.infer<typeof edgeSchema>;

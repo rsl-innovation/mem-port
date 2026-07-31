@@ -40,6 +40,12 @@ describe("export/import round trip", () => {
       to_entity: "mem-port",
       relation_type: "leads",
     });
+    await callTool(PORT, "source-lib", "save_skill", {
+      name: "onboard-new-contributor",
+      description: "Use when introducing someone new to the mem-port effort",
+      content: "Walk them through the entity/episode/memory/skill graph model first.",
+      entity_refs: ["mem-port"],
+    });
 
     const exportResult = await callTool(PORT, "source-lib", "export_library", {});
     const bundlePath = exportResult.content[0]?.text.match(/to (.+\.memport\.json)$/)?.[1];
@@ -50,14 +56,20 @@ describe("export/import round trip", () => {
       mode: "merge",
     });
     const counts = JSON.parse(importResult.content[0]?.text ?? "{}");
-    expect(counts).toEqual({ created: 4, updated: 0, skipped: 0, conflicts: 0 }); // 2 entities + 1 episode + 1 memory
+    expect(counts).toEqual({ created: 5, updated: 0, skipped: 0, conflicts: 0 }); // 2 entities + 1 episode + 1 memory + 1 skill
 
-    const entityResult = await callTool(PORT, "target-lib", "get_entity", { name: "Alice" });
-    const entity = JSON.parse(entityResult.content[0]?.text ?? "{}");
-    expect(entity.mentioned_by_memories).toHaveLength(1);
-    expect(entity.mentioned_by_episodes).toHaveLength(1);
-    expect(entity.related_entities).toEqual([
+    const aliceResult = await callTool(PORT, "target-lib", "get_entity", { name: "Alice" });
+    const alice = JSON.parse(aliceResult.content[0]?.text ?? "{}");
+    expect(alice.mentioned_by_memories).toHaveLength(1);
+    expect(alice.mentioned_by_episodes).toHaveLength(1);
+    expect(alice.related_entities).toEqual([
       expect.objectContaining({ relation_type: "leads", name: "mem-port" }),
+    ]);
+
+    const memPortResult = await callTool(PORT, "target-lib", "get_entity", { name: "mem-port" });
+    const memPort = JSON.parse(memPortResult.content[0]?.text ?? "{}");
+    expect(memPort.mentioned_by_skills).toEqual([
+      expect.objectContaining({ name: "onboard-new-contributor" }),
     ]);
   }, 60_000);
 
@@ -71,7 +83,7 @@ describe("export/import round trip", () => {
     });
     const counts = JSON.parse(importResult.content[0]?.text ?? "{}");
     expect(counts.created).toBe(0);
-    expect(counts.skipped).toBe(4);
+    expect(counts.skipped).toBe(5);
   }, 60_000);
 
   it("dry_run reports what would happen without writing anything", async () => {
@@ -83,7 +95,7 @@ describe("export/import round trip", () => {
       dry_run: true,
     });
     const counts = JSON.parse(importResult.content[0]?.text ?? "{}");
-    expect(counts.created).toBe(4);
+    expect(counts.created).toBe(5);
 
     const listResult = await callTool(PORT, "dry-run-lib", "list_episodes", {});
     const episodes = JSON.parse(listResult.content[0]?.text ?? "[]");

@@ -37,6 +37,17 @@ interface MemoryRow {
   source_episode: unknown | null;
 }
 
+interface SkillRow {
+  id: unknown;
+  name: string;
+  description: string;
+  content: string;
+  tags: string[];
+  source: string;
+  status: string;
+  embedding: number[] | null;
+}
+
 interface EdgeRow {
   fromId: unknown;
   toId: unknown;
@@ -69,6 +80,7 @@ export async function exportBundle(
   const [entityRows] = await session.query<[EntityRow[]]>(`SELECT * FROM entity`);
   const [episodeRows] = await session.query<[EpisodeRow[]]>(`SELECT * FROM episode`);
   const [memoryRows] = await session.query<[MemoryRow[]]>(`SELECT * FROM memory ${memoryWhere}`, bindings);
+  const [skillRows] = await session.query<[SkillRow[]]>(`SELECT * FROM skill`);
   const [mentionRows] = await session.query<[EdgeRow[]]>(`SELECT in AS fromId, out AS toId FROM mentions`);
   const [relatesRows] = await session.query<[EdgeRow[]]>(
     `SELECT in AS fromId, out AS toId, relation_type, attributes FROM relates_to`
@@ -77,6 +89,7 @@ export async function exportBundle(
   const includedRefs = new Set<string>();
   for (const row of memoryRows) includedRefs.add(String(row.id));
   for (const row of episodeRows) includedRefs.add(String(row.id));
+  for (const row of skillRows) includedRefs.add(String(row.id));
   for (const row of entityRows) includedRefs.add(String(row.id));
 
   const edges: BundleEdge[] = [];
@@ -134,6 +147,17 @@ export async function exportBundle(
       embedding: row.embedding,
       sourceEpisodeRef: row.source_episode ? String(row.source_episode) : null,
       contentHash: hashContent(row.content),
+    })),
+    skills: skillRows.map((row) => ({
+      ref: String(row.id),
+      name: row.name,
+      description: row.description,
+      content: row.content,
+      tags: row.tags ?? [],
+      source: row.source,
+      status: row.status,
+      embedding: row.embedding,
+      contentHash: hashContent(`${row.name}\n${row.description}\n${row.content}`),
     })),
     edges,
   };

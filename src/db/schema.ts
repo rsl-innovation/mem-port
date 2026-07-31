@@ -34,7 +34,22 @@ export async function ensureSchema(session: SurrealSession): Promise<void> {
     DEFINE FIELD IF NOT EXISTS created_at     ON memory TYPE datetime DEFAULT time::now();
     DEFINE FIELD IF NOT EXISTS updated_at     ON memory TYPE datetime DEFAULT time::now();
 
-    DEFINE TABLE IF NOT EXISTS mentions TYPE RELATION FROM memory|episode TO entity SCHEMALESS;
+    DEFINE TABLE IF NOT EXISTS skill SCHEMAFULL;
+    DEFINE FIELD IF NOT EXISTS name        ON skill TYPE string;
+    DEFINE FIELD IF NOT EXISTS description ON skill TYPE string;
+    DEFINE FIELD IF NOT EXISTS content     ON skill TYPE string;
+    DEFINE FIELD IF NOT EXISTS tags        ON skill TYPE array<string> DEFAULT [];
+    DEFINE FIELD IF NOT EXISTS source      ON skill TYPE string DEFAULT 'manual';
+    DEFINE FIELD IF NOT EXISTS status      ON skill TYPE string DEFAULT 'active';
+    DEFINE FIELD IF NOT EXISTS embedding   ON skill TYPE option<array<float>>;
+    DEFINE FIELD IF NOT EXISTS created_at  ON skill TYPE datetime DEFAULT time::now();
+    DEFINE FIELD IF NOT EXISTS updated_at  ON skill TYPE datetime DEFAULT time::now();
+    DEFINE INDEX IF NOT EXISTS skill_name_idx ON skill FIELDS name;
+
+    -- OVERWRITE (not IF NOT EXISTS): the FROM set has grown as new mentionable
+    -- tables were added, and this redefines only the relation's type constraint,
+    -- not its existing edge rows, so it's safe to re-run against older libraries.
+    DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM memory|episode|skill TO entity SCHEMALESS;
 
     DEFINE TABLE IF NOT EXISTS relates_to TYPE RELATION FROM entity TO entity SCHEMAFULL;
     DEFINE FIELD IF NOT EXISTS relation_type ON relates_to TYPE string;

@@ -33,14 +33,20 @@ async function loadExistingEntities(tx: SurrealTransaction): Promise<Map<string,
 
 async function loadExistingHashes(
   tx: SurrealTransaction,
-  table: "episode" | "memory"
+  table: "episode" | "memory" | "skill"
 ): Promise<Map<string, unknown>> {
-  const [rows] = await tx.query<[Array<{ id: unknown; title?: string; content: string }>]>(
-    `SELECT id, ${table === "episode" ? "title, " : ""}content FROM ${table}`
-  );
+  const fields = table === "episode" ? "title, content" : table === "skill" ? "name, description, content" : "content";
+  const [rows] = await tx.query<
+    [Array<{ id: unknown; title?: string; name?: string; description?: string; content: string }>]
+  >(`SELECT id, ${fields} FROM ${table}`);
   const map = new Map<string, unknown>();
   for (const row of rows) {
-    const hash = hashContent(table === "episode" ? `${row.title}\n${row.content}` : row.content);
+    const hash =
+      table === "episode"
+        ? hashContent(`${row.title}\n${row.content}`)
+        : table === "skill"
+          ? hashContent(`${row.name}\n${row.description}\n${row.content}`)
+          : hashContent(row.content);
     map.set(hash, row.id);
   }
   return map;
@@ -59,7 +65,7 @@ export async function importBundle(session: SurrealSession, bundle: Bundle, opti
 
   try {
     if (options.mode === "overwrite") {
-      await tx.query(`DELETE mentions; DELETE relates_to; DELETE memory; DELETE episode; DELETE entity;`);
+      await tx.query(`DELETE mentions; DELETE relates_to; DELETE memory; DELETE episode; DELETE skill; DELETE entity;`);
     }
 
     const existingEntities = options.mode === "merge" ? await loadExistingEntities(tx) : new Map<string, unknown>();
@@ -174,6 +180,46 @@ export async function importBundle(session: SurrealSession, bundle: Bundle, opti
         }
       );
       refMap.set(memory.ref, created[0].id);
+      result.created++;
+    }
+
+    const existingSkillHashes =
+      options.mode === "merge" ? await loadExistingHashes(tx, "skill") : new Map<string, unknown>();
+    for (const skill of bundle.skills) {
+      const existing = existingSkillHashes.get(skill.contentHash);
+      if (existing) {
+        result.conflicts++;
+        refMap.set(skill.ref, existing);
+        if (onConflict === "update") {
+          await tx.query(`UPDATE $id SET tags = $tags, source = $source, status = $status, embedding = $embedding`, {
+            id: existing,
+            tags: skill.tags,
+            source: skill.source,
+            status: skill.status,
+            embedding: skill.embedding ?? undefined,
+          });
+          result.updated++;
+        } else {
+          result.skipped++;
+        }
+        continue;
+      }
+      const [created] = await tx.query<[Array<{ id: unknown }>]>(
+        `CREATE skill CONTENT {
+           name: $name, description: $description, content: $content,
+           tags: $tags, source: $source, status: $status, embedding: $embedding
+         }`,
+        {
+          name: skill.name,
+          description: skill.description,
+          content: skill.content,
+          tags: skill.tags,
+          source: skill.source,
+          status: skill.status,
+          embedding: skill.embedding ?? undefined,
+        }
+      );
+      refMap.set(skill.ref, created[0].id);
       result.created++;
     }
 

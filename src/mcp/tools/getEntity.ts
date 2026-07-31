@@ -11,6 +11,7 @@ interface EntityRow {
   attributes: Record<string, unknown>;
   mentioning_memories: Array<{ id: unknown; content: string }>;
   mentioning_episodes: Array<{ id: unknown; title: string }>;
+  mentioning_skills: Array<{ id: unknown; name: string }>;
 }
 
 interface RelatedRow {
@@ -52,7 +53,8 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
         `SELECT
            *,
            <-mentions<-memory.{id, content} AS mentioning_memories,
-           <-mentions<-episode.{id, title} AS mentioning_episodes
+           <-mentions<-episode.{id, title} AS mentioning_episodes,
+           <-mentions<-skill.{id, name} AS mentioning_skills
          FROM ${target}`,
         args.id ? { id: new StringRecordId(args.id) } : { name: args.name }
       );
@@ -78,6 +80,7 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
         attributes: entity.attributes,
         mentioned_by_memories: entity.mentioning_memories.map((m) => ({ id: String(m.id), content: m.content })),
         mentioned_by_episodes: entity.mentioning_episodes.map((e) => ({ id: String(e.id), title: e.title })),
+        mentioned_by_skills: entity.mentioning_skills.map((s) => ({ id: String(s.id), name: s.name })),
         related_entities: related.map((r) => ({ relation_type: r.relation_type, name: r.name, id: String(r.id) })),
       };
 

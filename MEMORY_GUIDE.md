@@ -1,6 +1,6 @@
 # Using mem-port proactively
 
-mem-port's tools give your copilot the *capability* to save and recall memory — they don't by themselves make it use that capability. As of this version, the connected server already tells any MCP client to use `save_memory`/`search_memory` proactively (via the server's `instructions` and each tool's description), which should be enough on its own for most agents.
+mem-port's tools give your copilot the *capability* to save and recall memory — they don't by themselves make it use that capability. As of this version, the connected server already tells any MCP client to use `save_memory`/`search_memory` and `save_skill`/`search_skills` proactively (via the server's `instructions` and each tool's description), which should be enough on its own for most agents.
 
 This guide is for going further: pasting into your copilot's own custom-instructions file (`CLAUDE.md`, `.cursorrules`, Windsurf's rules file, etc.) if you want more explicit, tunable control over *when* and *where* it writes memory — in particular, keeping personal, organizational, and project memory genuinely separate rather than mixed into one library.
 
@@ -44,8 +44,14 @@ When you learn something that fits one of these, call that connection's save_mem
 same turn you learn it — don't wait to be asked. Link related people/projects/tools via
 entity_refs so context stays connected.
 
+When you work out a non-obvious, reusable procedure (not one-off task state, but something
+worth doing the same way next time), call that connection's save_skill. Skills are visible
+to every copilot connected to that same library-id, so a procedure learned in one tool is
+available in another without any manual copying.
+
 At the start of a task, call search_memory on whichever connection(s) are relevant before
-assuming no prior context exists.
+assuming no prior context exists, and search_skills before assuming there's no existing
+procedure for it.
 
 Don't save: anything already derivable from reading the current code/files, one-off state
 only relevant to this conversation, or anything the user has asked you not to keep.

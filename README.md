@@ -2,7 +2,7 @@
 
 A local MCP (Model Context Protocol) server for portable, long-term agentic memory — a thumb drive for your AI context.
 
-Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere.
+Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, skills, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere.
 
 Unlike other memory-for-agents projects, mem-port needs **no external services** — no Postgres, no Qdrant, no Neo4j. It's one process, one embedded [SurrealDB](https://surrealdb.com) instance combining graph storage and vector search, and zero-config local semantic search (no API key required).
 
@@ -90,11 +90,22 @@ Connecting the server gives your copilot the *ability* to save/recall memory —
 | `search_memory` | Semantic (vector) search over memories |
 | `save_episode` | Record a raw interaction/event that memories can be derived from |
 | `list_episodes` | List recorded episodes, filterable by time range/source |
+| `save_skill` | Save a reusable procedure, optionally linked to entities |
+| `search_skills` | Semantic (vector) search over skills, by task/situation |
+| `list_skills` | List saved skills, filterable by tag/source |
+| `get_skill` | Look up a skill by exact name or id |
+| `forget_skill` | Soft-archive (default) or permanently delete a skill |
 | `get_entity` | Look up an entity plus everything that mentions or relates to it |
 | `relate_entities` | Create a graph relation between two entities |
 | `forget_memory` | Soft-archive (default) or permanently delete a memory |
 | `export_library` | Export this library to a portable `.memport.json` bundle |
 | `import_library` | Import a `.memport.json` bundle, merging or overwriting |
+
+## Skills memory
+
+Alongside episodes and memories, mem-port stores **skills** — reusable procedures for recurring tasks (e.g. "how to debug a flaky test in this repo," "the deploy steps for checkout-service"). A skill has a `name`, a `description` (the trigger condition — when a copilot should reach for it, matched by `search_skills`), and `content` (the actual instructions).
+
+Skills are what makes "porting common skills across AI" work with no extra machinery: since they live in the same shared knowledge graph as everything else, a skill saved by Claude Code is immediately visible to Cursor or Windsurf the moment they connect with the same `library-id` — no file format conversion needed. `export_library`/`import_library` carry skills between machines exactly like entities, episodes, and memories.
 
 ## Porting memory between machines
 
