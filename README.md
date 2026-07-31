@@ -48,6 +48,19 @@ Or add it directly to `.mcp.json` (project scope, shareable via version control)
 
 Run `/mcp` inside Claude Code to confirm it shows `mem-port` as connected.
 
+### Connecting from the Claude Code VS Code extension
+
+The extension shares the exact same MCP configuration as the CLI (`.mcp.json` / `~/.claude.json`) — there's no separate settings UI to add a server from. Open the integrated terminal (`` Ctrl+` `` / `` Cmd+` ``) and run the same command as above:
+
+```bash
+claude mcp add --transport http mem-port http://127.0.0.1:8787/mcp \
+  --header "library-id: my-personal-workspace"
+```
+
+This requires the [standalone `claude` CLI](https://code.claude.com/docs/en/setup) to be installed — the extension bundles its own private copy for the chat panel and does *not* put `claude` on your terminal PATH, so `claude mcp add` won't work in the integrated terminal until you install the CLI separately. Editing `.mcp.json` directly (the JSON block above) works too and doesn't need the CLI.
+
+Once added, type `/mcp` in the chat panel to confirm mem-port shows as connected, or to enable/disable/reconnect it.
+
 ### Connecting from other MCP clients
 
 Any client that supports Streamable HTTP with custom headers can connect the same way. Clients that only support stdio-based servers (some Claude Desktop configurations, for example) need a stdio-to-HTTP bridge such as [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
