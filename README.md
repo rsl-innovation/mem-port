@@ -14,6 +14,15 @@ npx @rsl-innovation/mem-port serve
 
 This starts a daemon on `http://127.0.0.1:8787/mcp`. Point any MCP client at it over Streamable HTTP, with a `library-id` header identifying your workspace. Every copilot that connects with the same `library-id` shares the same memory; different `library-id`s are fully isolated from each other (each maps to its own SurrealDB namespace/database) — there's no cross-tenant leakage.
 
+`npx` re-checks the registry on every invocation. If you'll be running mem-port commands often, install it globally instead so `mem-port` is a plain command on your PATH:
+
+```bash
+npm install -g @rsl-innovation/mem-port
+mem-port serve
+```
+
+The rest of this README uses `mem-port <command>` for brevity. If you didn't install globally, substitute `npx @rsl-innovation/mem-port <command>` wherever you see that — it works identically, just slower to start.
+
 ### Connecting from Claude Code
 
 Easiest: use the CLI (`--header` accepts any number of `Key: Value` pairs):
