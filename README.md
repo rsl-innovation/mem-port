@@ -1,5 +1,7 @@
 # mem-port
 
+[![npm version](https://img.shields.io/npm/v/@rsl-innovation/mem-port.svg)](https://www.npmjs.com/package/@rsl-innovation/mem-port)
+
 A local MCP (Model Context Protocol) server for portable, long-term agentic memory — a thumb drive for your AI context.
 
 Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. The usual workaround — copy-pasting context, summaries, or exported notes from one agent into another — only captures a snapshot frozen at the moment you made it. From there the copies drift: each agent keeps learning on its own, nothing keeps the copies in sync, and the longer you go the more your copilots disagree about what's actually true. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, skills, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere. Every connected copilot reads and writes the same graph, so there's nothing to paste and nothing to drift.
