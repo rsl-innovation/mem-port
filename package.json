@@ -11,7 +11,7 @@
   "bugs": {
     "url": "https://github.com/rsl-innovation/mem-port/issues"
   },
-  "homepage": "https://github.com/rsl-innovation/mem-port#readme",
+  "homepage": "https://mem-port.com/",
   "engines": {
     "node": ">=20"
   },
