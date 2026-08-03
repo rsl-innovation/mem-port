@@ -46,10 +46,31 @@ export async function ensureSchema(session: SurrealSession): Promise<void> {
     DEFINE FIELD IF NOT EXISTS updated_at  ON skill TYPE datetime DEFAULT time::now();
     DEFINE INDEX IF NOT EXISTS skill_name_idx ON skill FIELDS name;
 
+    -- Architectural decision records. Note 'status' is the ADR lifecycle
+    -- (proposed/accepted/superseded/deprecated), NOT the soft-delete flag that
+    -- memory and skill overload it for — 'archived' carries that here instead.
+    DEFINE TABLE IF NOT EXISTS adr SCHEMAFULL;
+    DEFINE FIELD IF NOT EXISTS number       ON adr TYPE int;
+    DEFINE FIELD IF NOT EXISTS title        ON adr TYPE string;
+    DEFINE FIELD IF NOT EXISTS context      ON adr TYPE string;
+    DEFINE FIELD IF NOT EXISTS decision     ON adr TYPE string;
+    DEFINE FIELD IF NOT EXISTS consequences ON adr TYPE option<string>;
+    DEFINE FIELD IF NOT EXISTS alternatives ON adr TYPE option<string>;
+    DEFINE FIELD IF NOT EXISTS status       ON adr TYPE string DEFAULT 'proposed';
+    DEFINE FIELD IF NOT EXISTS supersedes   ON adr TYPE option<record<adr>>;
+    DEFINE FIELD IF NOT EXISTS tags         ON adr TYPE array<string> DEFAULT [];
+    DEFINE FIELD IF NOT EXISTS source       ON adr TYPE string DEFAULT 'manual';
+    DEFINE FIELD IF NOT EXISTS archived     ON adr TYPE bool DEFAULT false;
+    DEFINE FIELD IF NOT EXISTS decided_at   ON adr TYPE datetime DEFAULT time::now();
+    DEFINE FIELD IF NOT EXISTS embedding    ON adr TYPE option<array<float>>;
+    DEFINE FIELD IF NOT EXISTS created_at   ON adr TYPE datetime DEFAULT time::now();
+    DEFINE FIELD IF NOT EXISTS updated_at   ON adr TYPE datetime DEFAULT time::now();
+    DEFINE INDEX IF NOT EXISTS adr_number_idx ON adr FIELDS number UNIQUE;
+
     -- OVERWRITE (not IF NOT EXISTS): the FROM set has grown as new mentionable
     -- tables were added, and this redefines only the relation's type constraint,
     -- not its existing edge rows, so it's safe to re-run against older libraries.
-    DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM memory|episode|skill TO entity SCHEMALESS;
+    DEFINE TABLE OVERWRITE mentions TYPE RELATION FROM memory|episode|skill|adr TO entity SCHEMALESS;
 
     DEFINE TABLE IF NOT EXISTS relates_to TYPE RELATION FROM entity TO entity SCHEMAFULL;
     DEFINE FIELD IF NOT EXISTS relation_type ON relates_to TYPE string;

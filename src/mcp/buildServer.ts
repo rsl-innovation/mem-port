@@ -15,6 +15,11 @@ import { registerSearchSkills } from "./tools/searchSkills.js";
 import { registerListSkills } from "./tools/listSkills.js";
 import { registerGetSkill } from "./tools/getSkill.js";
 import { registerForgetSkill } from "./tools/forgetSkill.js";
+import { registerSaveAdr } from "./tools/saveAdr.js";
+import { registerSearchAdrs } from "./tools/searchAdrs.js";
+import { registerListAdrs } from "./tools/listAdrs.js";
+import { registerGetAdr } from "./tools/getAdr.js";
+import { registerForgetAdr } from "./tools/forgetAdr.js";
 
 const SERVER_INSTRUCTIONS = `mem-port is a persistent, cross-session knowledge graph for this library-id — not a scratch pad you write to only when asked.
 
@@ -22,7 +27,9 @@ Proactively call save_memory whenever you learn a durable fact, preference, deci
 
 Proactively call save_skill when you work out a non-obvious, reusable procedure — the kind of thing worth doing the same way next time, not one-off task state. Skills are shared across every copilot connected to this library-id, so a procedure learned in one tool is available in another.
 
-Proactively call search_memory at the start of a task that could be informed by prior context, and search_skills at the start of a task that might already have a known procedure, before assuming neither exists.
+Proactively call save_adr when a consequential technical choice gets made — a library, a data model, a protocol, an accepted tradeoff — capturing the problem that forced it and the options rejected, not just the outcome. Use save_adr rather than save_memory for decisions like these; when a later decision reverses an earlier one, pass 'supersedes' so the chain stays intact instead of leaving two contradictory records.
+
+Proactively call search_memory at the start of a task that could be informed by prior context, search_skills at the start of a task that might already have a known procedure, and search_adrs before proposing an approach or re-litigating a technical choice — a superseded ADR still tells you what was already tried and why it was dropped. Check before assuming none of these exist.
 
 Don't save: information already derivable from the current codebase/files, one-off task state that's only relevant to this conversation, or anything the user has asked you not to keep.`;
 
@@ -43,6 +50,11 @@ export function buildServer(root: Surreal, embeddings: EmbeddingProvider, dataDi
   registerListSkills(server, root);
   registerGetSkill(server, root);
   registerForgetSkill(server, root);
+  registerSaveAdr(server, root, embeddings);
+  registerSearchAdrs(server, root, embeddings);
+  registerListAdrs(server, root);
+  registerGetAdr(server, root);
+  registerForgetAdr(server, root);
 
   return server;
 }

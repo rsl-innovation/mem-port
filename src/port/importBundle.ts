@@ -31,23 +31,51 @@ async function loadExistingEntities(tx: SurrealTransaction): Promise<Map<string,
   return map;
 }
 
-async function loadExistingHashes(
-  tx: SurrealTransaction,
-  table: "episode" | "memory" | "skill"
-): Promise<Map<string, unknown>> {
-  const fields = table === "episode" ? "title, content" : table === "skill" ? "name, description, content" : "content";
-  const [rows] = await tx.query<
-    [Array<{ id: unknown; title?: string; name?: string; description?: string; content: string }>]
-  >(`SELECT id, ${fields} FROM ${table}`);
+interface HashRow {
+  id: unknown;
+  title?: string;
+  name?: string;
+  description?: string;
+  content?: string;
+  context?: string;
+  decision?: string;
+}
+
+type HashableTable = "episode" | "memory" | "skill" | "adr";
+
+/**
+ * Which fields identify a row for dedupe, per table. These must stay in step
+ * with the matching `contentHash` composition in exportBundle.ts — the two
+ * sides of the same key.
+ */
+const HASH_SPECS: Record<HashableTable, { fields: string; hash: (row: HashRow) => string }> = {
+  episode: { fields: "title, content", hash: (row) => `${row.title}\n${row.content}` },
+  memory: { fields: "content", hash: (row) => `${row.content}` },
+  skill: { fields: "name, description, content", hash: (row) => `${row.name}\n${row.description}\n${row.content}` },
+  adr: { fields: "title, context, decision", hash: (row) => `${row.title}\n${row.context}\n${row.decision}` },
+};
+
+/**
+ * Highest ADR number already in the target library, or 0 if there are none.
+ *
+ * Deliberately a full scan with the max taken in JS rather than
+ * `ORDER BY number DESC LIMIT 1`: inside a transaction that ordered form
+ * resolves against the `adr_number_idx` index and comes back empty, which
+ * silently restarts numbering at 1 and then trips the unique index. Plain
+ * SELECTs inside the transaction do see committed rows. The table is small and
+ * the import already scans it for content hashes.
+ */
+async function loadMaxAdrNumber(tx: SurrealTransaction): Promise<number> {
+  const [rows] = await tx.query<[Array<{ number: number }>]>(`SELECT number FROM adr`);
+  return rows.reduce((max, row) => (row.number > max ? row.number : max), 0);
+}
+
+async function loadExistingHashes(tx: SurrealTransaction, table: HashableTable): Promise<Map<string, unknown>> {
+  const spec = HASH_SPECS[table];
+  const [rows] = await tx.query<[HashRow[]]>(`SELECT id, ${spec.fields} FROM ${table}`);
   const map = new Map<string, unknown>();
   for (const row of rows) {
-    const hash =
-      table === "episode"
-        ? hashContent(`${row.title}\n${row.content}`)
-        : table === "skill"
-          ? hashContent(`${row.name}\n${row.description}\n${row.content}`)
-          : hashContent(row.content);
-    map.set(hash, row.id);
+    map.set(hashContent(spec.hash(row)), row.id);
   }
   return map;
 }
@@ -65,7 +93,9 @@ export async function importBundle(session: SurrealSession, bundle: Bundle, opti
 
   try {
     if (options.mode === "overwrite") {
-      await tx.query(`DELETE mentions; DELETE relates_to; DELETE memory; DELETE episode; DELETE skill; DELETE entity;`);
+      await tx.query(
+        `DELETE mentions; DELETE relates_to; DELETE memory; DELETE episode; DELETE skill; DELETE adr; DELETE entity;`
+      );
     }
 
     const existingEntities = options.mode === "merge" ? await loadExistingEntities(tx) : new Map<string, unknown>();
@@ -221,6 +251,82 @@ export async function importBundle(session: SurrealSession, bundle: Bundle, opti
       );
       refMap.set(skill.ref, created[0].id);
       result.created++;
+    }
+
+    // ADRs import in two passes: `supersedes` points at another ADR, which may
+    // appear later in the array, so every row has to exist before any link can
+    // be resolved. (Memories avoid this by importing episodes first; a
+    // self-referential table can't.)
+    const existingAdrHashes = options.mode === "merge" ? await loadExistingHashes(tx, "adr") : new Map<string, unknown>();
+    // Bundle numbers are discarded — they belong to the source library's
+    // sequence and would collide here. Supersede links travel as record refs
+    // through refMap, so renumbering can't break a chain.
+    let nextNumber = (await loadMaxAdrNumber(tx)) + 1;
+    const createdAdrRefs = new Set<string>();
+
+    for (const adr of bundle.adrs) {
+      const existing = existingAdrHashes.get(adr.contentHash);
+      if (existing) {
+        result.conflicts++;
+        refMap.set(adr.ref, existing);
+        if (onConflict === "update") {
+          await tx.query(
+            `UPDATE $id SET status = $status, tags = $tags, source = $source, archived = $archived, embedding = $embedding`,
+            {
+              id: existing,
+              status: adr.status,
+              tags: adr.tags,
+              source: adr.source,
+              archived: adr.archived,
+              embedding: adr.embedding ?? undefined,
+            }
+          );
+          result.updated++;
+        } else {
+          result.skipped++;
+        }
+        continue;
+      }
+      const [created] = await tx.query<[Array<{ id: unknown }>]>(
+        `CREATE adr CONTENT {
+           number: $number, title: $title, context: $context, decision: $decision,
+           consequences: $consequences, alternatives: $alternatives, status: $status,
+           tags: $tags, source: $source, archived: $archived, decided_at: $decided_at,
+           embedding: $embedding
+         }`,
+        {
+          number: nextNumber++,
+          title: adr.title,
+          context: adr.context,
+          decision: adr.decision,
+          consequences: adr.consequences ?? undefined,
+          alternatives: adr.alternatives ?? undefined,
+          status: adr.status,
+          tags: adr.tags,
+          source: adr.source,
+          archived: adr.archived,
+          decided_at: new DateTime(adr.decided_at),
+          embedding: adr.embedding ?? undefined,
+        }
+      );
+      refMap.set(adr.ref, created[0].id);
+      createdAdrRefs.add(adr.ref);
+      result.created++;
+    }
+
+    // Pass 2. Only ADRs this import created get their links written — rewriting
+    // supersedes on a pre-existing local ADR could corrupt a chain the target
+    // library already maintains.
+    for (const adr of bundle.adrs) {
+      if (!adr.supersedesRef || !createdAdrRefs.has(adr.ref)) {
+        continue;
+      }
+      const id = refMap.get(adr.ref);
+      const target = refMap.get(adr.supersedesRef);
+      if (!id || !target) {
+        continue; // the superseded ADR fell outside the exported scope
+      }
+      await tx.query(`UPDATE $id SET supersedes = $target`, { id, target });
     }
 
     for (const edge of bundle.edges) {

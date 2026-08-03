@@ -44,6 +44,24 @@ const skillSchema = z.object({
   contentHash: z.string(),
 });
 
+const adrSchema = z.object({
+  ref: z.string(),
+  number: z.number(),
+  title: z.string(),
+  context: z.string(),
+  decision: z.string(),
+  consequences: z.string().nullable().optional(),
+  alternatives: z.string().nullable().optional(),
+  status: z.string(),
+  supersedesRef: z.string().nullable().optional(),
+  tags: z.array(z.string()).default([]),
+  source: z.string(),
+  archived: z.boolean().default(false),
+  decided_at: z.string(),
+  embedding: z.array(z.number()).nullable().optional(),
+  contentHash: z.string(),
+});
+
 const mentionsEdgeSchema = z.object({
   type: z.literal("mentions"),
   fromRef: z.string(),
@@ -78,6 +96,9 @@ export const bundleSchema = z.object({
   episodes: z.array(episodeSchema),
   memories: z.array(memorySchema),
   skills: z.array(skillSchema).default([]),
+  // Like `skills` before it: added after formatVersion 1 shipped, so it defaults
+  // rather than bumping the literal — older bundles must keep parsing.
+  adrs: z.array(adrSchema).default([]),
   edges: z.array(edgeSchema),
 });
 
@@ -86,4 +107,5 @@ export type BundleEntity = z.infer<typeof entitySchema>;
 export type BundleEpisode = z.infer<typeof episodeSchema>;
 export type BundleMemory = z.infer<typeof memorySchema>;
 export type BundleSkill = z.infer<typeof skillSchema>;
+export type BundleAdr = z.infer<typeof adrSchema>;
 export type BundleEdge = z.infer<typeof edgeSchema>;

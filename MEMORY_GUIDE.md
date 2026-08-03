@@ -1,6 +1,6 @@
 # Using mem-port proactively
 
-mem-port's tools give your copilot the *capability* to save and recall memory — they don't by themselves make it use that capability well. As of this version, the connected server already tells any MCP client to use `save_memory`/`search_memory` and `save_skill`/`search_skills` proactively (via the server's `instructions` and each tool's description), which is enough to get *some* proactive use out of most agents.
+mem-port's tools give your copilot the *capability* to save and recall memory — they don't by themselves make it use that capability well. As of this version, the connected server already tells any MCP client to use `save_memory`/`search_memory`, `save_skill`/`search_skills`, and `save_adr`/`search_adrs` proactively (via the server's `instructions` and each tool's description), which is enough to get *some* proactive use out of most agents.
 
 This guide is for going further: pasting into your copilot's own custom-instructions file (`CLAUDE.md`, `.cursorrules`, Windsurf's rules file, etc.) if you want more explicit, tunable control over *what* it saves, *when*, and *where* — in particular, keeping personal, organizational, and project memory genuinely separate rather than mixed into one library, and avoiding the two failure modes that show up once a library has been in use for a while: **duplicate memories** (the same fact saved slightly differently each session) and **noise** (task-local trivia that never gets recalled and just dilutes search results).
 
@@ -39,6 +39,8 @@ Every `save_memory` call takes a `memory_type`. Picking the right one is what ma
 
 If a memory could plausibly be two types (e.g. a decision that's also somewhat a preference), pick the one that answers "why would I search for this?" — you'll search for a `decision` when asking "why is it built this way," and for a `preference` when asking "how does the user want this done."
 
+**`decision` vs. an ADR:** if the choice was between real alternatives and the rejected options matter — a library, a data model, a protocol, a tradeoff you'll be asked to revisit — use `save_adr` instead. It keeps the problem framing, the alternatives that lost, a lifecycle status, and a supersede link to whatever replaces it later; a `decision` memory keeps only the outcome and its rationale. Reach for `memory_type: "decision"` for smaller, local choices that don't warrant an entry in the project's decision log.
+
 ## What actually belongs in memory
 
 Save something the moment you learn it if, and only if, it would still be true and still be useful in a conversation that starts from zero context. A good test: could someone reconstruct this by reading the current code/files/git history in under a minute? If yes, don't save it — point at it instead (or don't save it at all).
@@ -71,11 +73,13 @@ search_memory("does the user have a stated preference about X") on the relevant 
 - If a close match comes back but is now outdated or incomplete, prefer `forget_memory` on the stale one and save a fresh one over letting both sit side by side — two contradicting memories are worse than one correct one.
 - If the match is still accurate, don't re-save it just because you re-derived it this session — that's exactly the duplication this step exists to prevent.
 
-## Use entities and skills to keep things connected
+## Use entities, skills, and the ADR log to keep things connected
 
 `entity_refs` on `save_memory` (and the two-argument `relate_entities`) turn a flat list of memories into a graph. Tag every person, project, or tool a memory is meaningfully *about* — not incidentally mentioned. `get_entity` on a name then returns every memory, episode, and related entity for it, which is what makes "tell me everything relevant to checkout-service" answerable in one call instead of a broad search.
 
 Skills (`save_skill`/`search_skills`/`list_skills`/`get_skill`) are for *procedures*, not facts — "how to run the flaky-test triage for this repo," "the release steps for checkout-service," something you'd want done the same way next time rather than just remembered. A skill saved from one copilot is immediately visible to every other copilot connected to the same `library-id` — that's the mechanism, not something you need to engineer. Give a skill a `description` that states the trigger condition (*when* to reach for it), since that's what `search_skills` matches against, not just what it does.
+
+ADRs (`save_adr`/`search_adrs`/`list_adrs`/`get_adr`) are for *decisions* — the architectural choices you'd otherwise re-argue from scratch in six months. Write the `context` as the problem and the forces in play, not a restatement of the decision: that's the field `search_adrs` leans on, and people search by the problem ("why aren't we using Postgres?") rather than by the answer. Record the `alternatives` and why each lost, since that's the part a plain memory throws away and the part that settles the argument when someone proposes a rejected option again. When a later decision reverses an earlier one, pass `supersedes` rather than saving a contradicting record — the older ADR is marked `superseded` and the two stay linked, so the log reads as a history instead of a pile.
 
 ## Paste this into your copilot's custom instructions
 
@@ -93,6 +97,13 @@ When working with the user, proactively save and recall memory using the connect
 - mem-port-project (project memory): facts scoped to the current codebase — architecture
   decisions and their rationale, known gotchas, ongoing initiatives, why something
   non-obvious is the way it is.
+
+For a consequential technical choice — a library, a data model, a protocol, an accepted
+tradeoff — call save_adr instead of save_memory. Write context as the problem and the forces
+that made the decision necessary, and record the alternatives that lost and why. When a later
+decision reverses an earlier one, pass supersedes so the older ADR is linked and marked
+superseded, rather than saving a record that contradicts it. Use memory_type "decision" only
+for smaller local choices that don't belong in the project's decision log.
 
 Pick memory_type deliberately, don't default everything to "fact":
   - task: outstanding/ongoing work, with blockers and absolute (not relative) dates.
@@ -118,8 +129,9 @@ library-id, so a procedure learned in one tool is available in another without a
 copying.
 
 At the start of a task, call search_memory on whichever connection(s) are relevant before
-assuming no prior context exists, and search_skills before assuming there's no existing
-procedure for it.
+assuming no prior context exists, search_skills before assuming there's no existing procedure
+for it, and search_adrs before proposing an approach in an area that may already have a
+decision on record — a superseded ADR still tells you what was tried and why it was dropped.
 
 Don't save: anything derivable by reading the current code/files (architecture, conventions,
 file paths — these drift out of sync with a memory the instant either changes), git history

@@ -6,7 +6,7 @@
 
 A local MCP (Model Context Protocol) server for portable, long-term agentic memory — a thumb drive for your AI context.
 
-Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. The usual workaround — copy-pasting context, summaries, or exported notes from one agent into another — only captures a snapshot frozen at the moment you made it. From there the copies drift: each agent keeps learning on its own, nothing keeps the copies in sync, and the longer you go the more your copilots disagree about what's actually true. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, skills, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere. Every connected copilot reads and writes the same graph, so there's nothing to paste and nothing to drift.
+Every AI copilot (Claude Code, Cursor, Windsurf, ...) keeps its own memory, siloed to that tool. The usual workaround — copy-pasting context, summaries, or exported notes from one agent into another — only captures a snapshot frozen at the moment you made it. From there the copies drift: each agent keeps learning on its own, nothing keeps the copies in sync, and the longer you go the more your copilots disagree about what's actually true. mem-port runs as a single local daemon that any number of copilots can connect to, backed by an embedded knowledge graph (entities, episodes, memories, skills, architectural decision records, and the relations between them) that survives restarts and can be exported to a portable file and moved anywhere. Every connected copilot reads and writes the same graph, so there's nothing to paste and nothing to drift.
 
 Unlike other memory-for-agents projects, mem-port needs **no external services** — no Postgres, no Qdrant, no Neo4j. It's one process, one embedded [SurrealDB](https://surrealdb.com) instance combining graph storage and vector search, and zero-config local semantic search (no API key required).
 
@@ -101,17 +101,42 @@ Connecting the server gives your copilot the *ability* to save/recall memory —
 | `list_skills` | List saved skills, filterable by tag/source |
 | `get_skill` | Look up a skill by exact name or id |
 | `forget_skill` | Soft-archive (default) or permanently delete a skill |
+| `save_adr` | Record an architectural decision, optionally superseding an earlier one |
+| `search_adrs` | Semantic (vector) search over ADRs, by problem or area |
+| `list_adrs` | List the ADR log, filterable by status/tag/source |
+| `get_adr` | Look up one ADR in full, by number or id |
+| `forget_adr` | Soft-archive (default) or permanently delete an ADR |
 | `get_entity` | Look up an entity plus everything that mentions or relates to it |
 | `relate_entities` | Create a graph relation between two entities |
 | `forget_memory` | Soft-archive (default) or permanently delete a memory |
 | `export_library` | Export this library to a portable `.memport.json` bundle |
 | `import_library` | Import a `.memport.json` bundle, merging or overwriting |
 
+## Memories and episodes
+
+**Memories** are the core unit — one durable, self-contained statement worth recalling in a later session that starts from zero context ("User prefers dark mode in all editors"). Each carries a `memory_type` (`fact`, `preference`, `decision`, `task`, or `reference`) that `search_memory` can filter on, and an `importance` from 0 to 1. The type is worth picking deliberately: it's the difference between a searchable library and a flat pile of text — see [MEMORY_GUIDE.md](./MEMORY_GUIDE.md) for how to choose, and for what doesn't belong in memory at all.
+
+**Episodes** are the raw material memories get derived from — a conversation, a debugging session, a meeting — recorded with a `title`, `content`, a `source` (which copilot recorded it) and `occurred_at`. Where a memory is a distilled claim, an episode is an unedited record of something that happened. `save_memory` takes a `source_episode_id`, so a memory can point back at the episode it came from and keep its provenance.
+
+The two answer different questions, which is why both exist: *"what's true about this project?"* is a semantic search over memories, while *"what happened last Tuesday?"* is a chronological read of episodes via `list_episodes` (filterable by time range and source). Memories are what you search; episodes are what you replay.
+
+**Entities** — people, projects, tools — are the connective tissue. Passing `entity_refs` when saving anything links it to those entities, creating them on first mention. `get_entity` then returns every memory, episode, skill, and ADR that mentions the entity plus its related entities, which makes "tell me everything relevant to checkout-service" one lookup instead of several searches. `relate_entities` adds typed edges between entities themselves (`Alice` —leads→ `mem-port`).
+
 ## Skills memory
 
 Alongside episodes and memories, mem-port stores **skills** — reusable procedures for recurring tasks (e.g. "how to debug a flaky test in this repo," "the deploy steps for checkout-service"). A skill has a `name`, a `description` (the trigger condition — when a copilot should reach for it, matched by `search_skills`), and `content` (the actual instructions).
 
 Skills are what makes "porting common skills across AI" work with no extra machinery: since they live in the same shared knowledge graph as everything else, a skill saved by Claude Code is immediately visible to Cursor or Windsurf the moment they connect with the same `library-id` — no file format conversion needed. `export_library`/`import_library` carry skills between machines exactly like entities, episodes, and memories.
+
+## ADR log
+
+mem-port also keeps an **ADR log** — architectural decision records, the consequential technical choices whose reasoning matters months later. Each ADR gets a sequential number within its library (`ADR-0001`, `ADR-0002`, ...) and holds the four things a decision record needs: the `context` that forced the decision, the `decision` itself, its `consequences`, and the `alternatives` that lost.
+
+This is deliberately not the same as `save_memory(memory_type: "decision")`. A memory records *that* something was decided; an ADR keeps the problem framing and the rejected options, which is what you actually need when someone proposes the rejected option again a year later. `search_adrs` matches against title + context + decision, so "why aren't we using Postgres?" finds the record even when it shares no words with it.
+
+Decisions get reversed, so ADRs have a lifecycle (`proposed` → `accepted`, then `superseded` or `deprecated`) and a supersede chain. Passing `supersedes` when recording a newer decision — as a record id, a number, or its display form like `ADR-0003` — automatically marks the older one `superseded` and links the two, so the log stays readable from either end rather than accumulating contradictory records.
+
+Prefer superseding an ADR over `forget_adr` — a decision that was reversed is usually worth keeping on the record.
 
 ## Porting memory between machines
 
@@ -126,7 +151,7 @@ mem-port export --library-id my-personal-workspace
 mem-port import --library-id my-personal-workspace --in ./my-personal-workspace-....memport.json
 ```
 
-`import` defaults to `--mode merge` (dedupes entities by name+type, memories/episodes by content hash — importing the same bundle twice is a no-op). Pass `--mode overwrite` to wipe the target library first, or `--dry-run` to see what would happen without writing anything.
+`import` defaults to `--mode merge` (dedupes entities by name+type, memories/episodes/skills/ADRs by content hash — importing the same bundle twice is a no-op). Imported ADRs are renumbered onto the end of the target library's sequence rather than colliding with its existing numbers; supersede links are carried across by record reference, so a chain survives renumbering intact. Pass `--mode overwrite` to wipe the target library first, or `--dry-run` to see what would happen without writing anything.
 
 ## Running persistently
 

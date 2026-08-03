@@ -48,6 +48,23 @@ interface SkillRow {
   embedding: number[] | null;
 }
 
+interface AdrRow {
+  id: unknown;
+  number: number;
+  title: string;
+  context: string;
+  decision: string;
+  consequences: string | null;
+  alternatives: string | null;
+  status: string;
+  supersedes: unknown | null;
+  tags: string[];
+  source: string;
+  archived: boolean;
+  decided_at: unknown;
+  embedding: number[] | null;
+}
+
 interface EdgeRow {
   fromId: unknown;
   toId: unknown;
@@ -81,6 +98,9 @@ export async function exportBundle(
   const [episodeRows] = await session.query<[EpisodeRow[]]>(`SELECT * FROM episode`);
   const [memoryRows] = await session.query<[MemoryRow[]]>(`SELECT * FROM memory ${memoryWhere}`, bindings);
   const [skillRows] = await session.query<[SkillRow[]]>(`SELECT * FROM skill`);
+  // Ordered, unlike the other tables: import renumbers ADRs in array order, so
+  // an unordered read here would shuffle the log's chronology across a port.
+  const [adrRows] = await session.query<[AdrRow[]]>(`SELECT * FROM adr ORDER BY number ASC`);
   const [mentionRows] = await session.query<[EdgeRow[]]>(`SELECT in AS fromId, out AS toId FROM mentions`);
   const [relatesRows] = await session.query<[EdgeRow[]]>(
     `SELECT in AS fromId, out AS toId, relation_type, attributes FROM relates_to`
@@ -90,6 +110,7 @@ export async function exportBundle(
   for (const row of memoryRows) includedRefs.add(String(row.id));
   for (const row of episodeRows) includedRefs.add(String(row.id));
   for (const row of skillRows) includedRefs.add(String(row.id));
+  for (const row of adrRows) includedRefs.add(String(row.id));
   for (const row of entityRows) includedRefs.add(String(row.id));
 
   const edges: BundleEdge[] = [];
@@ -158,6 +179,23 @@ export async function exportBundle(
       status: row.status,
       embedding: row.embedding,
       contentHash: hashContent(`${row.name}\n${row.description}\n${row.content}`),
+    })),
+    adrs: adrRows.map((row) => ({
+      ref: String(row.id),
+      number: row.number,
+      title: row.title,
+      context: row.context,
+      decision: row.decision,
+      consequences: row.consequences,
+      alternatives: row.alternatives,
+      status: row.status,
+      supersedesRef: row.supersedes ? String(row.supersedes) : null,
+      tags: row.tags ?? [],
+      source: row.source,
+      archived: row.archived,
+      decided_at: String(row.decided_at),
+      embedding: row.embedding,
+      contentHash: hashContent(`${row.title}\n${row.context}\n${row.decision}`),
     })),
     edges,
   };

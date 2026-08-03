@@ -55,7 +55,7 @@ export function registerExportLibrary(
         content: [
           {
             type: "text" as const,
-            text: `Exported ${bundle.entities.length} entities, ${bundle.episodes.length} episodes, ${bundle.memories.length} memories, ${bundle.skills.length} skills to ${filePath}`,
+            text: `Exported ${bundle.entities.length} entities, ${bundle.episodes.length} episodes, ${bundle.memories.length} memories, ${bundle.skills.length} skills, ${bundle.adrs.length} ADRs to ${filePath}`,
           },
         ],
       };

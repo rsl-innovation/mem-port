@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import { formatAdrNumber } from "../../db/adr.js";
 
 interface EntityRow {
   id: unknown;
@@ -12,6 +13,7 @@ interface EntityRow {
   mentioning_memories: Array<{ id: unknown; content: string }>;
   mentioning_episodes: Array<{ id: unknown; title: string }>;
   mentioning_skills: Array<{ id: unknown; name: string }>;
+  mentioning_adrs: Array<{ id: unknown; number: number; title: string }>;
 }
 
 interface RelatedRow {
@@ -54,7 +56,8 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
            *,
            <-mentions<-memory.{id, content} AS mentioning_memories,
            <-mentions<-episode.{id, title} AS mentioning_episodes,
-           <-mentions<-skill.{id, name} AS mentioning_skills
+           <-mentions<-skill.{id, name} AS mentioning_skills,
+           <-mentions<-adr.{id, number, title} AS mentioning_adrs
          FROM ${target}`,
         args.id ? { id: new StringRecordId(args.id) } : { name: args.name }
       );
@@ -81,6 +84,12 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
         mentioned_by_memories: entity.mentioning_memories.map((m) => ({ id: String(m.id), content: m.content })),
         mentioned_by_episodes: entity.mentioning_episodes.map((e) => ({ id: String(e.id), title: e.title })),
         mentioned_by_skills: entity.mentioning_skills.map((s) => ({ id: String(s.id), name: s.name })),
+        mentioned_by_adrs: entity.mentioning_adrs.map((a) => ({
+          id: String(a.id),
+          number: a.number,
+          adr: formatAdrNumber(a.number),
+          title: a.title,
+        })),
         related_entities: related.map((r) => ({ relation_type: r.relation_type, name: r.name, id: String(r.id) })),
       };
 
