@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest a capability or improvement for mem-port
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us what you're trying to do and what's in the way.
+
+        To be straight with you: mem-port is not accepting outside pull requests
+        right now (see [CONTRIBUTING.md](https://github.com/rsl-innovation/mem-port/blob/main/CONTRIBUTING.md)),
+        and we may not build this, or may not build it soon. Knowing what people
+        actually need still shapes the roadmap, so it's worth telling us.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem, not just the solution you have in mind. The underlying goal often has a better answer than the feature first imagined.
+      placeholder: |
+        I use mem-port across a work laptop and a personal machine, and I want
+        the same memories on both without manually exporting and importing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: Your proposed solution, if you have one in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried instead?
+      description: Workarounds you're using today, or other approaches you considered and why they fall short.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues to see if this has already been requested
+          required: true
+        - label: I understand this project isn't accepting outside pull requests right now, and that this request may not be implemented
+          required: true
