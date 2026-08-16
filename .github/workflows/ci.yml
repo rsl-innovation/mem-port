@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # The embedding model is downloaded on first test run; cache it so CI
+      # isn't re-fetching model weights on every push.
+      - uses: actions/cache@v4
+        with:
+          path: .test-model-cache
+          key: model-cache-${{ hashFiles('package-lock.json') }}
+          restore-keys: model-cache-
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
+import { VERSION } from "../version.js";
 import { registerSaveMemory } from "./tools/saveMemory.js";
 import { registerSearchMemory } from "./tools/searchMemory.js";
 import { registerSaveEpisode } from "./tools/saveEpisode.js";
@@ -34,7 +35,7 @@ Proactively call search_memory at the start of a task that could be informed by 
 Don't save: information already derivable from the current codebase/files, one-off task state that's only relevant to this conversation, or anything the user has asked you not to keep.`;
 
 export function buildServer(root: Surreal, embeddings: EmbeddingProvider, dataDir: string): McpServer {
-  const server = new McpServer({ name: "mem-port", version: "0.1.0" }, { instructions: SERVER_INSTRUCTIONS });
+  const server = new McpServer({ name: "mem-port", version: VERSION }, { instructions: SERVER_INSTRUCTIONS });
 
   registerSaveMemory(server, root, embeddings);
   registerSearchMemory(server, root, embeddings);
