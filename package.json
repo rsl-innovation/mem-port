@@ -13,7 +13,7 @@
   },
   "homepage": "https://mem-port.com/",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "publishConfig": {
     "access": "public"

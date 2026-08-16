@@ -8,12 +8,18 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the engines.node floor, 24 is current LTS. Testing the floor
+        # keeps it an evidenced claim rather than an assertion.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       # The embedding model is downloaded on first test run; cache it so CI
@@ -21,8 +27,9 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: .test-model-cache
-          key: model-cache-${{ hashFiles('package-lock.json') }}
-          restore-keys: model-cache-
+          # Keyed per matrix leg so the two jobs don't race to save the same key.
+          key: model-cache-node${{ matrix.node-version }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: model-cache-node${{ matrix.node-version }}-
 
       - run: npm ci
       - run: npm run typecheck
