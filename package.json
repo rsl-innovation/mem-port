@@ -28,6 +28,7 @@
   "scripts": {
     "build": "tsup",
     "prepublishOnly": "npm run build",
+    "preversion": "npm run typecheck && npm test",
     "dev": "tsx src/cli.ts serve",
     "test": "MEM_PORT_MODEL_CACHE_DIR=$PWD/.test-model-cache vitest run",
     "typecheck": "tsc --noEmit"

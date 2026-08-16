@@ -256,6 +256,19 @@ npm run dev &
 ./scripts/smoke.sh
 ```
 
+### Releasing
+
+Releases are automated. Bumping the version creates the commit and the `vX.Y.Z` tag; pushing the tag is what triggers everything else:
+
+```bash
+npm version patch   # or minor / major — runs typecheck + tests first
+git push --follow-tags
+```
+
+The `Release` workflow then verifies the tag matches `package.json`, re-runs typecheck and tests, publishes to npm (with provenance, via OIDC trusted publishing — no token stored anywhere), and creates the GitHub Release with notes generated from the commits since the previous tag.
+
+Do not run `npm publish` by hand; a tag push is the only supported path.
+
 ## Gotchas
 
 - **mem-port is a localhost server — it only works with clients running on the same machine.** Web/cloud-hosted chat sessions (e.g. chatgpt.com or claude.ai in a browser tab) run server-side and have no route to `127.0.0.1` on your computer, so they can't reach mem-port no matter how it's configured. To connect ChatGPT, Claude, or similar tools, install their **desktop app** and add mem-port there — the desktop app runs locally and can reach the daemon, whereas the same account's web session cannot.

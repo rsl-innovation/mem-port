@@ -2,16 +2,24 @@
 import { parseArgs } from "node:util";
 import { startDaemon } from "./daemon.js";
 import { callTool } from "./mcpClient.js";
+import { VERSION } from "./version.js";
 
 const USAGE = `Usage:
   mem-port serve [--port <port>] [--data-dir <dir>]
   mem-port export --library-id <id> [--port <port>] [--memory-types t1,t2] [--since <iso date>]
-  mem-port import --library-id <id> --in <path> [--mode merge|overwrite] [--on-conflict skip|update] [--dry-run] [--port <port>]`;
+  mem-port import --library-id <id> --in <path> [--mode merge|overwrite] [--on-conflict skip|update] [--dry-run] [--port <port>]
+  mem-port --version`;
 
 async function main(): Promise<void> {
   const [, , command, ...rest] = process.argv;
 
   switch (command) {
+    case "--version":
+    case "-v": {
+      console.log(VERSION);
+      break;
+    }
+
     case "serve":
     case undefined: {
       const { values } = parseArgs({
