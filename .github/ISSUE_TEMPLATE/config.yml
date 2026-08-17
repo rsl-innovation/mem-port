@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/rsl-innovation/mem-port/security/advisories/new
+    about: Report privately — please don't open a public issue for security problems.
+  - name: Setup and connection problems
+    url: https://github.com/rsl-innovation/mem-port#gotchas
+    about: Read the Gotchas first — mem-port is a localhost server and can't be reached from browser-based chat sessions.
+  - name: Documentation
+    url: https://mem-port.com/
+    about: Installation, client setup, and usage guides.

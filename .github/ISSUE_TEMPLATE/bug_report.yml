@@ -1,0 +1,101 @@
+name: Bug report
+description: Something in mem-port is broken or behaves unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. mem-port runs across a lot of OS, Node, and
+        MCP-client combinations we can't test ourselves, so these reports are
+        genuinely the most useful thing we receive.
+
+        **Security issue?** Don't file it here — report it privately via
+        [Security → Report a vulnerability](https://github.com/rsl-innovation/mem-port/security/advisories/new).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+      placeholder: |
+        I expected search_memory to return my saved memories, but it returned an
+        empty list even though save_memory had reported success.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: What we need to do to see it ourselves. A reproducible report is worth ten described ones.
+      placeholder: |
+        1. Start the daemon with `npx @rsl-innovation/mem-port serve`
+        2. Connect Claude Desktop with library-id "personal"
+        3. Save a memory, then search for it
+        4. Search returns nothing
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: mem-port version
+      description: Output of `mem-port --version`
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version`. mem-port requires Node >= 22.
+      placeholder: "v22.14.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+        - Windows (WSL)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Which tool is connecting to mem-port, and its version if you know it.
+      placeholder: "Claude Code CLI 2.x / Claude Desktop / Cursor / ChatGPT desktop"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Daemon output
+      description: |
+        mem-port logs to stderr — that output is often the entire answer. Paste
+        what it printed around the time of the problem.
+
+        Redact anything private; logs may contain memory contents.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I'm on the latest release, or I've noted above why I can't be
+          required: true
+        - label: I read the **Gotchas** section of the README (most connection problems are a browser-based chat session trying to reach a localhost server, which can't work)
+          required: true
+        - label: I searched existing issues for this problem
+          required: true
