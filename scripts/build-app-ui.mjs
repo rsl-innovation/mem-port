@@ -63,7 +63,19 @@ const script = bundle.outputFiles[0].text;
 const safeScript = script.replace(/<\/script/gi, "<\\/script");
 
 const html = await fs.readFile(path.join(uiDir, "app.html"), "utf-8");
-const withScript = html.replace("</body>", `  <script type="module">${safeScript}</script>\n  </body>`);
+
+// The replacement MUST be a function. Passing the bundle as a replacement
+// string makes String.replace interpret its `$` patterns: minified zod is full
+// of regex end-anchors inside template literals (`^${x}$`), and that trailing
+// "$`" means "everything before the match" — which splices a copy of the page
+// into its own <script> at every occurrence. It produced a page that still
+// looked right structurally (a <script>, no external assets) but whose bundle
+// no longer parsed, so the app silently never ran. A function replacement
+// disables $-substitution outright.
+const withScript = html.replace(
+  "</body>",
+  () => `  <script type="module">${safeScript}</script>\n  </body>`
+);
 
 if (withScript === html) {
   throw new Error("app.html has no </body> to inject the bundle into");
