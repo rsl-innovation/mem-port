@@ -10,7 +10,6 @@ interface SkillRow {
   id: unknown;
   name: string;
   description: string;
-  content: string;
   tags: string[];
   source: string;
   created_at: unknown;
@@ -22,7 +21,8 @@ export function registerListSkills(server: McpServer, root: Surreal): void {
     "list_skills",
     {
       _meta: appToolMeta(),
-      description: "List saved skills, newest first, optionally filtered by tag or source.",
+      description:
+        "List saved skills, newest first, optionally filtered by tag or source. Returns each skill's description and metadata, NOT its procedure body — read the descriptions to find the one you want, then call get_skill for that skill's steps.",
       inputSchema: {
         tag: z.string().optional().describe('Only include skills with this tag, e.g. "testing".'),
         source: z.string().optional().describe('Only include skills recorded by this exact source, e.g. "claude-code".'),
@@ -45,7 +45,7 @@ export function registerListSkills(server: McpServer, root: Surreal): void {
       }
 
       const [rows] = await session.query<[SkillRow[]]>(
-        `SELECT id, name, description, content, tags, source, created_at FROM skill
+        `SELECT id, name, description, tags, source, created_at FROM skill
          WHERE ${conditions.join(" AND ")}
          ORDER BY created_at DESC
          LIMIT $limit`,
@@ -56,7 +56,6 @@ export function registerListSkills(server: McpServer, root: Surreal): void {
         id: String(row.id),
         name: row.name,
         description: row.description,
-        content: row.content,
         tags: row.tags,
         source: row.source,
         created_at: row.created_at,

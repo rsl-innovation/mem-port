@@ -11,7 +11,6 @@ interface SkillRow {
   id: unknown;
   name: string;
   description: string;
-  content: string;
   tags: string[];
   source: string;
   score: number;
@@ -24,7 +23,7 @@ export function registerSearchSkills(server: McpServer, root: Surreal, embedding
     {
       _meta: appToolMeta(),
       description:
-        "Semantically search skills by the situation or task at hand, ranked by relevance. Call this proactively before starting a task that might already have a known procedure — before assuming you need to work it out from scratch.",
+        "Semantically search skills by the situation or task at hand, ranked by relevance. Call this proactively before starting a task that might already have a known procedure — before assuming you need to work it out from scratch. Returns each match's description and metadata, NOT its procedure body — pick the match you want from the descriptions, then call get_skill for that skill's steps.",
       inputSchema: {
         query: z
           .string()
@@ -54,7 +53,7 @@ export function registerSearchSkills(server: McpServer, root: Surreal, embedding
       const tagFilter = args.tags && args.tags.length > 0 ? "AND tags CONTAINSANY $tags" : "";
 
       const [rows] = await session.query<[SkillRow[]]>(
-        `SELECT id, name, description, content, tags, source, vector::similarity::cosine(embedding, $queryVector) AS score
+        `SELECT id, name, description, tags, source, vector::similarity::cosine(embedding, $queryVector) AS score
          FROM skill
          WHERE status = 'active' AND embedding != NONE ${tagFilter}
          ORDER BY score DESC
@@ -73,7 +72,6 @@ export function registerSearchSkills(server: McpServer, root: Surreal, embedding
           id: String(row.id),
           name: row.name,
           description: row.description,
-          content: row.content,
           tags: row.tags,
           source: row.source,
           score: row.score,
