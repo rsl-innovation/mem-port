@@ -11,7 +11,8 @@
     "types": []
   },
   "include": [
-    "src/mcp/ui/app.ts"
+    "src/mcp/ui/app.ts",
+    "src/mcp/ui/render.ts"
   ],
   "exclude": []
 }

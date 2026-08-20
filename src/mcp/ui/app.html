@@ -6,129 +6,269 @@
     <title>mem-port</title>
     <style>
       /*
-       * The host renders this in a sandboxed iframe and tells us which theme it
-       * is using. Both palettes are defined up front and selected by the
-       * data-theme attribute the app sets, with prefers-color-scheme as the
-       * fallback for a host that never sends context.
+       * This panel renders inside the host's own message column, so it should
+       * read as part of that conversation rather than as an embedded widget.
+       * Every value below is the host's token first and ours only as a
+       * fallback — the app applies hostContext.styles.variables at runtime, so
+       * on a host that sends them the panel picks up that host's real palette,
+       * font and weights instead of approximating them.
+       *
+       * Fallbacks are used when a host sends no tokens at all, and are checked
+       * for contrast in both themes.
        */
       :root {
-        --bg: transparent;
-        --fg: #1a1a19;
-        --muted: #6b6b68;
-        --card: #fdfdfc;
-        --border: #e4e4e1;
-        --accent: #b8552f;
+        color-scheme: light;
+
+        --mp-fg: var(--color-text-primary, #1d1c1a);
+        --mp-fg-2: var(--color-text-secondary, #5a5852);
+        --mp-fg-3: var(--color-text-tertiary, #78756d);
+        --mp-line: var(--color-border-primary, #e6e4df);
+        --mp-hover: var(--color-background-secondary, #f4f2ee);
+        --mp-ring: var(--color-ring-primary, #b8552f);
+
+        --mp-sans: var(--font-sans, ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif);
+
+        /* Four steps, and weight and colour carry the rest of the hierarchy.
+           A 1.25 display scale is wrong here: this panel sits inside the
+           host's message column, and a heading larger than the surrounding
+           conversation would read as a widget shouting over its own page. */
+        --mp-t-xs: 12px;
+        --mp-t-sm: 13.5px;
+        --mp-t-md: 15px;
+        --mp-t-lg: 17.5px;
+        --mp-medium: var(--font-weight-medium, 500);
+        --mp-semibold: var(--font-weight-semibold, 600);
       }
+
       :root[data-theme="dark"] {
-        --fg: #ecebe8;
-        --muted: #9a9a95;
-        --card: #23231f;
-        --border: #35352f;
-        --accent: #e08c62;
+        color-scheme: dark;
+
+        --mp-fg: var(--color-text-primary, #eceae5);
+        --mp-fg-2: var(--color-text-secondary, #a8a59d);
+        --mp-fg-3: var(--color-text-tertiary, #8d8a82);
+        --mp-line: var(--color-border-primary, #35332d);
+        --mp-hover: var(--color-background-secondary, #2a2824);
+        --mp-ring: var(--color-ring-primary, #e0906a);
       }
+
       @media (prefers-color-scheme: dark) {
         :root:not([data-theme="light"]) {
-          --fg: #ecebe8;
-          --muted: #9a9a95;
-          --card: #23231f;
-          --border: #35352f;
-          --accent: #e08c62;
+          color-scheme: dark;
+
+          --mp-fg: var(--color-text-primary, #eceae5);
+          --mp-fg-2: var(--color-text-secondary, #a8a59d);
+          --mp-fg-3: var(--color-text-tertiary, #8d8a82);
+          --mp-line: var(--color-border-primary, #35332d);
+          --mp-hover: var(--color-background-secondary, #2a2824);
+          --mp-ring: var(--color-ring-primary, #e0906a);
         }
       }
 
       * {
         box-sizing: border-box;
       }
+
       body {
         margin: 0;
-        padding: 4px;
-        background: var(--bg);
-        color: var(--fg);
-        font-family: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
-        font-size: 14px;
+        /* The host paints the message background; borrowing it keeps the panel
+           from reading as a pasted-in card. */
+        background: transparent;
+        color: var(--mp-fg);
+        font-family: var(--mp-sans);
+        font-size: var(--mp-t-md);
         line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
       }
 
+      /* ── Heading ─────────────────────────────────────────────────────────
+         Search headings echo the user's query, which can run to a full
+         sentence. Sentence case at a small size wraps gracefully; tracked
+         uppercase turns the same string into a wall. */
       .heading {
-        margin: 0 0 12px;
-        font-size: 13px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--muted);
+        margin: 0 0 10px;
+        font-size: var(--mp-t-sm);
+        font-weight: var(--mp-medium);
+        color: var(--mp-fg-2);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
 
-      .cards {
+      /* ── Result rows ─────────────────────────────────────────────────────
+         A hairline list rather than one bordered card per result: the same
+         information in far less height, and no box nested inside the host's
+         own message container. Rows are not interactive, so they deliberately
+         carry no hover state — only the button below does. */
+      .rows {
         list-style: none;
         margin: 0;
         padding: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
       }
 
-      .card {
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 12px 14px;
+      .row {
+        padding: 11px 0;
+        border-top: 1px solid var(--mp-line);
       }
 
-      .card-title {
+      .row-title {
         margin: 0;
-        font-weight: 600;
+        font-size: var(--mp-t-md);
+        font-weight: var(--mp-semibold);
+        line-height: 1.35;
         overflow-wrap: anywhere;
-      }
-      .card-subtitle {
-        margin: 4px 0 0;
-        overflow-wrap: anywhere;
-      }
-      .card-meta,
-      .detail-subtitle,
-      .section-label {
-        margin: 6px 0 0;
-        font-size: 12px;
-        color: var(--muted);
-        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
 
+      .row-snippet {
+        margin: 3px 0 0;
+        color: var(--mp-fg-2);
+        font-size: var(--mp-t-sm);
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .row-meta {
+        margin: 6px 0 0;
+        color: var(--mp-fg-3);
+        font-size: var(--mp-t-xs);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* ── Show more ───────────────────────────────────────────────────────
+         A long result list is mostly scroll the reader never wanted. Five at a
+         time keeps the panel to a glanceable height, and the tally says what
+         is being held back so "show more" is a known quantity. */
+      .more {
+        appearance: none;
+        width: 100%;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0;
+        padding: 11px 8px;
+        border: none;
+        border-top: 1px solid var(--mp-line);
+        border-radius: 0 0 6px 6px;
+        background: transparent;
+        color: var(--mp-fg-2);
+        font: inherit;
+        font-size: var(--mp-t-sm);
+        font-weight: var(--mp-medium);
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 120ms ease-out, color 120ms ease-out;
+      }
+
+      .more:hover {
+        background: var(--mp-hover);
+        color: var(--mp-fg);
+      }
+
+      .more:focus-visible {
+        outline: 2px solid var(--mp-ring);
+        outline-offset: -2px;
+      }
+
+      .more-tally {
+        color: var(--mp-fg-3);
+        font-weight: var(--font-weight-normal, 400);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .tally-final {
+        margin: 0;
+        padding: 11px 8px 0;
+        border-top: 1px solid var(--mp-line);
+        color: var(--mp-fg-3);
+        font-size: var(--mp-t-xs);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ── Detail view ─────────────────────────────────────────────────────*/
       .detail-title {
         margin: 0;
-        font-size: 16px;
-        font-weight: 600;
+        font-size: var(--mp-t-lg);
+        font-weight: var(--mp-semibold);
+        line-height: 1.3;
         overflow-wrap: anywhere;
       }
+
       .detail-subtitle {
         margin: 4px 0 0;
+        color: var(--mp-fg-2);
+        font-size: var(--mp-t-sm);
+        overflow-wrap: anywhere;
       }
 
       .section {
         margin-top: 14px;
         padding-top: 12px;
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--mp-line);
       }
+
       .section-label {
-        margin: 0 0 4px;
-        font-weight: 600;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-        color: var(--accent);
+        margin: 0 0 5px;
+        font-size: var(--mp-t-xs);
+        font-weight: var(--mp-semibold);
+        color: var(--mp-fg-2);
       }
+
       .section-value {
         margin: 0;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
       }
-      /* Long prose (an ADR's context, a skill's procedure) scrolls in place
-         rather than pushing the whole conversation down. */
+
+      /* Long prose — an ADR's context, a skill's procedure — scrolls in place
+         rather than pushing the rest of the conversation down. */
       .section-value.long {
-        max-height: 260px;
+        max-height: 240px;
         overflow-y: auto;
+        overscroll-behavior: contain;
       }
 
       .empty {
         margin: 0;
-        color: var(--muted);
+        padding: 10px 0;
+        color: var(--mp-fg-3);
+      }
+
+      /* ── Motion ──────────────────────────────────────────────────────────
+         One authored moment: results arrive. Rows settle upward in sequence,
+         which also makes it legible that "show more" added to the list rather
+         than replacing it. */
+      @keyframes mp-enter {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+      }
+
+      .enter {
+        animation: mp-enter 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .enter {
+          animation: none;
+        }
+        .more {
+          transition: none;
+        }
       }
     </style>
   </head>
