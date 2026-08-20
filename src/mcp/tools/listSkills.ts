@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import { a2uiList, captionOf, formatTags } from "../a2ui.js";
 
 interface SkillRow {
   id: unknown;
@@ -58,7 +59,19 @@ export function registerListSkills(server: McpServer, root: Surreal): void {
       }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+          ...a2uiList(extra, {
+            tool: "list_skills",
+            heading: `Skills (${results.length})`,
+            empty: "No skills saved in this library yet.",
+            items: results.map((skill) => ({
+              title: skill.name,
+              subtitle: skill.description,
+              meta: captionOf([formatTags(skill.tags), skill.source]),
+            })),
+          }),
+        ],
       };
     }
   );

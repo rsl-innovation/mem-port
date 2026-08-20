@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import { a2uiList, captionOf, formatScore } from "../a2ui.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 const MEMORY_TYPES = ["fact", "preference", "decision", "task", "reference"] as const;
@@ -75,7 +76,18 @@ export function registerSearchMemory(server: McpServer, root: Surreal, embedding
         }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+          ...a2uiList(extra, {
+            tool: "search_memory",
+            heading: `Memories for "${args.query}" (${results.length})`,
+            empty: "No memories matched that query.",
+            items: results.map((memory) => ({
+              title: memory.content,
+              meta: captionOf([memory.memory_type, `importance ${memory.importance}`, formatScore(memory.score)]),
+            })),
+          }),
+        ],
       };
     }
   );

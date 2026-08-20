@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { ADR_STATUSES, formatAdrNumber } from "../../db/adr.js";
+import { a2uiList, captionOf, formatScore, formatTags } from "../a2ui.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 interface AdrRow {
@@ -88,7 +89,19 @@ export function registerSearchAdrs(server: McpServer, root: Surreal, embeddings:
         }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+          ...a2uiList(extra, {
+            tool: "search_adrs",
+            heading: `Decisions for "${args.query}" (${results.length})`,
+            empty: "No decisions matched that query.",
+            items: results.map((adr) => ({
+              title: `${adr.adr} — ${adr.title}`,
+              subtitle: adr.decision,
+              meta: captionOf([formatScore(adr.score), adr.status, formatTags(adr.tags)]),
+            })),
+          }),
+        ],
       };
     }
   );

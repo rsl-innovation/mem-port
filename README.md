@@ -112,6 +112,28 @@ Connecting the server gives your copilot the *ability* to save/recall memory —
 | `export_library` | Export this library to a portable `.memport.json` bundle |
 | `import_library` | Import a `.memport.json` bundle, merging or overwriting |
 
+### Rendered results (A2UI)
+
+The nine read tools — `search_memory`, `list_episodes`, `search_skills`, `list_skills`, `get_skill`, `search_adrs`, `list_adrs`, `get_adr`, `get_entity` — return their results twice: the JSON text block your copilot reads, plus an [A2UI](https://a2ui.org) surface a renderer-capable host can draw instead of showing a human that JSON. Lists come back as result cards, `get_*` as a detail view.
+
+The A2UI payload is an [A2UI v1.0](https://a2ui.org/specification/v1.0-a2ui/) message stream against the basic catalog, wrapped as an MCP embedded resource with mime type `application/a2ui+json`, [as the A2UI-over-MCP guide specifies](https://a2ui.org/guides/a2ui_over_mcp/). The text block is always first and is byte-identical to what it was before, so clients that don't render A2UI behave exactly as they did.
+
+It is **on by default**. To turn it off, add an `a2ui: 0` header next to `library-id` where you configure the client:
+
+```json
+{
+  "mcpServers": {
+    "mem-port": {
+      "type": "http",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": { "library-id": "my-personal-workspace", "a2ui": "0" }
+    }
+  }
+}
+```
+
+Or turn it off for every client at once by starting the daemon with `A2UI=0 mem-port serve`. An explicit `a2ui` header wins over the environment in both directions, so one client can opt back in on a daemon that has it off.
+
 ## Memories and episodes
 
 **Memories** are the core unit — one durable, self-contained statement worth recalling in a later session that starts from zero context ("User prefers dark mode in all editors"). Each carries a `memory_type` (`fact`, `preference`, `decision`, `task`, or `reference`) that `search_memory` can filter on, and an `importance` from 0 to 1. The type is worth picking deliberately: it's the difference between a searchable library and a flat pile of text — see [MEMORY_GUIDE.md](./MEMORY_GUIDE.md) for how to choose, and for what doesn't belong in memory at all.
@@ -236,6 +258,7 @@ journalctl --user -u mem-port -f
 | `MEM_PORT_DATA_DIR` | OS-appropriate app data dir | Where the SurrealDB store and cached embedding model live |
 | `MEM_PORT_EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | Local embedding model id (reserved for future use) |
 | `MEM_PORT_MODEL_CACHE_DIR` | `<data-dir>/models` | Override the embedding model cache location |
+| `A2UI` / `MEM_PORT_A2UI` | on | Set to `0` to stop the read tools emitting [A2UI](#rendered-results-a2ui) surfaces |
 
 All state lives under one data directory — the SurrealDB store (`surrealkv://`, persistent across restarts) and the cached local embedding model. Delete the data dir to fully reset.
 

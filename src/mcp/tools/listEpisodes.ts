@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DateTime, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import { a2uiList, captionOf, formatWhen } from "../a2ui.js";
 
 interface EpisodeRow {
   id: unknown;
@@ -65,7 +66,19 @@ export function registerListEpisodes(server: McpServer, root: Surreal): void {
       }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+          ...a2uiList(extra, {
+            tool: "list_episodes",
+            heading: `Episodes (${results.length})`,
+            empty: "No episodes recorded in this library yet.",
+            items: results.map((episode) => ({
+              title: episode.title,
+              subtitle: episode.content,
+              meta: captionOf([formatWhen(episode.occurred_at), episode.source]),
+            })),
+          }),
+        ],
       };
     }
   );

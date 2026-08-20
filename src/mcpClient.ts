@@ -1,6 +1,20 @@
+type TextBlock = { type: "text"; text: string };
+
+/**
+ * Read tools append an A2UI resource block after their text block (see
+ * mcp/a2ui.ts), so content is no longer text-only. The text block stays first,
+ * which is what callers here read.
+ */
+type ResourceBlock = { type: "resource"; resource: { uri: string; mimeType: string; text: string } };
+
 interface ToolCallResult {
-  content: Array<{ type: "text"; text: string }>;
+  content: Array<TextBlock | ResourceBlock>;
   isError?: boolean;
+}
+
+/** The text block a tool returned, ignoring any A2UI resource alongside it. */
+export function firstText(result: ToolCallResult): string | undefined {
+  return result.content.find((block): block is TextBlock => block.type === "text")?.text;
 }
 
 /**
@@ -48,7 +62,7 @@ export async function callTool(
     throw new Error("Malformed MCP response: missing result");
   }
   if (payload.result.isError) {
-    throw new Error(`Tool error: ${payload.result.content[0]?.text}`);
+    throw new Error(`Tool error: ${firstText(payload.result)}`);
   }
 
   return payload.result;
