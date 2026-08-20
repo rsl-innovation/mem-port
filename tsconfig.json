@@ -15,5 +15,8 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test", "src/mcp/ui/app.ts"]
+  // src/mcp/ui/{app,render}.ts are browser sources typechecked by
+  // tsconfig.ui.json with DOM libs; generated.ts is theirs bundled into a
+  // string and IS part of the node build.
+  "exclude": ["node_modules", "dist", "test", "src/mcp/ui/app.ts", "src/mcp/ui/render.ts"]
 }
