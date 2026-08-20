@@ -5,7 +5,7 @@ import path from "node:path";
 import type { Server } from "node:http";
 import { startDaemon } from "../src/daemon.js";
 import { closeRootConnection } from "../src/db/connection.js";
-import { callTool } from "../src/mcpClient.js";
+import { callTool, firstText } from "../src/mcpClient.js";
 
 const PORT = 18790;
 let server: Server;
@@ -69,6 +69,35 @@ describe("skills", () => {
 
     const searchAfterForget = await callTool(PORT, "skills-lib", "search_skills", { query: "test is flaky in CI" });
     expect(JSON.parse(searchAfterForget.content[0]?.text ?? "[]")).toHaveLength(0);
+  }, 60_000);
+
+  it("withholds the procedure body from list and search, and only serves it from get_skill", async () => {
+    const BODY = "1. Revoke the leaked key.\n2. Issue a replacement.\n3. Rotate anything derived from it.";
+    await callTool(PORT, "body-lib", "save_skill", {
+      name: "rotate-leaked-key",
+      description: "Use when a credential has leaked into a public repo",
+      content: BODY,
+      tags: ["security"],
+      source: "claude-code",
+    });
+
+    // list and search are for CHOOSING a skill. Returning every body would put
+    // the full text of every skill in the library into the model's context on
+    // a single call, which is the cost this contract exists to avoid.
+    for (const [tool, args] of [
+      ["list_skills", {}],
+      ["search_skills", { query: "leaked credential in a repo" }],
+    ] as const) {
+      const text = firstText(await callTool(PORT, "body-lib", tool, args)) ?? "";
+      expect(text, `${tool} must still identify the skill`).toContain("rotate-leaked-key");
+      expect(text, `${tool} must still carry the description`).toContain("credential has leaked");
+      expect(text, `${tool} must not carry the procedure body`).not.toContain("Revoke the leaked key");
+    }
+
+    // ...and the body has to be reachable, or withholding it above would make
+    // the skill unusable rather than merely cheaper.
+    const detail = firstText(await callTool(PORT, "body-lib", "get_skill", { name: "rotate-leaked-key" })) ?? "";
+    expect(detail).toContain("Revoke the leaked key");
   }, 60_000);
 
   it("never leaks skills across library-ids", async () => {

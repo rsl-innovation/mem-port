@@ -97,8 +97,8 @@ Connecting the server gives your copilot the *ability* to save/recall memory —
 | `save_episode` | Record a raw interaction/event that memories can be derived from |
 | `list_episodes` | List recorded episodes, filterable by time range/source |
 | `save_skill` | Save a reusable procedure, optionally linked to entities |
-| `search_skills` | Semantic (vector) search over skills, by task/situation |
-| `list_skills` | List saved skills, filterable by tag/source |
+| `search_skills` | Semantic (vector) search over skills, by task/situation — descriptions only |
+| `list_skills` | List saved skills, filterable by tag/source — descriptions only |
 | `get_skill` | Look up a skill by exact name or id |
 | `forget_skill` | Soft-archive (default) or permanently delete a skill |
 | `save_adr` | Record an architectural decision, optionally superseding an earlier one |
@@ -149,6 +149,8 @@ The two answer different questions, which is why both exist: *"what's true about
 ## Skills memory
 
 Alongside episodes and memories, mem-port stores **skills** — reusable procedures for recurring tasks (e.g. "how to debug a flaky test in this repo," "the deploy steps for checkout-service"). A skill has a `name`, a `description` (the trigger condition — when a copilot should reach for it, matched by `search_skills`), and `content` (the actual instructions).
+
+`search_skills` and `list_skills` return descriptions and metadata but **not** `content`, and `get_skill` serves the body for the one skill you picked. Since both are meant to be called proactively at the start of a task, returning every procedure body would put the whole library into the model's context to answer "is there a skill for this?" — measured at 68 kB for 21 skills, against 12 kB for the same call now.
 
 Skills are what makes "porting common skills across AI" work with no extra machinery: since they live in the same shared knowledge graph as everything else, a skill saved by Claude Code is immediately visible to Cursor or Windsurf the moment they connect with the same `library-id` — no file format conversion needed. `export_library`/`import_library` carry skills between machines exactly like entities, episodes, and memories.
 
