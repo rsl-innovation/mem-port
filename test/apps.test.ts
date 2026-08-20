@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
+import { Script } from "node:vm";
 import { startDaemon } from "../src/daemon.js";
 import { closeRootConnection } from "../src/db/connection.js";
 
@@ -124,6 +125,24 @@ describe("mcp apps", () => {
     // is loaded from outside the document at all.
     const external = html.match(/(?:src|href)\s*=\s*["'](?!#)[^"']+["']/gi) ?? [];
     expect(external, `page must not load external assets: ${external.join(", ")}`).toHaveLength(0);
+  }, 60_000);
+
+  it("serves a page whose inline bundle actually parses", async () => {
+    const { contents } = await rpc("resources/read", { uri: APP_URI });
+    const html = contents[0].text as string;
+
+    // Regression guard. The build inlines the bundle into the HTML with
+    // String.replace, whose replacement STRING syntax treats `$` specially —
+    // and minified zod is full of `^${x}$` regexes, whose trailing "$`" means
+    // "everything before the match". That spliced 12 copies of the page into
+    // its own <script>, producing a page that passed every structural check
+    // above while its bundle no longer parsed, so the app never ran and the
+    // panel rendered blank. Both assertions below failed on that build.
+    expect(html.match(/<!doctype html>/gi) ?? [], "the page must not contain itself").toHaveLength(1);
+
+    const script = html.match(/<script type="module">([\s\S]*)<\/script>/)?.[1];
+    expect(script, "the page must carry an inline bundle").toBeTruthy();
+    expect(() => new Script(script!), "the inlined bundle must be syntactically valid").not.toThrow();
   }, 60_000);
 
   it("puts a well-formed view model on every read tool's result", async () => {
