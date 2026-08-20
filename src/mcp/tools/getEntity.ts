@@ -3,7 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { formatAdrNumber } from "../../db/adr.js";
-import { a2uiDetail } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { detailResult } from "../view.js";
 
 interface EntityRow {
   id: unknown;
@@ -24,9 +26,11 @@ interface RelatedRow {
 }
 
 export function registerGetEntity(server: McpServer, root: Surreal): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "get_entity",
     {
+      _meta: appToolMeta(),
       description: "Get an entity by name or id, along with memories/episodes that mention it and related entities.",
       inputSchema: {
         name: z.string().optional().describe("Exact entity name to look up, e.g. \"Alice\". Provide this or 'id', not both."),
@@ -94,28 +98,23 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
         related_entities: related.map((r) => ({ relation_type: r.relation_type, name: r.name, id: String(r.id) })),
       };
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(result, null, 2) },
-          ...a2uiDetail(extra, {
-            tool: "get_entity",
-            key: result.name,
-            title: result.name,
-            subtitle: result.entity_type,
-            sections: [
-              { label: "Summary", value: result.summary },
-              {
-                label: "Related entities",
-                value: result.related_entities.map((r) => `${r.relation_type}: ${r.name}`).join("\n"),
-              },
-              { label: "Memories", value: result.mentioned_by_memories.map((m) => m.content).join("\n") },
-              { label: "Episodes", value: result.mentioned_by_episodes.map((e) => e.title).join("\n") },
-              { label: "Skills", value: result.mentioned_by_skills.map((s) => s.name).join("\n") },
-              { label: "Decisions", value: result.mentioned_by_adrs.map((a) => `${a.adr} — ${a.title}`).join("\n") },
-            ],
-          }),
+      return detailResult(extra, result, {
+        tool: "get_entity",
+        key: result.name,
+        title: result.name,
+        subtitle: result.entity_type,
+        sections: [
+          { label: "Summary", value: result.summary },
+          {
+            label: "Related entities",
+            value: result.related_entities.map((r) => `${r.relation_type}: ${r.name}`).join("\n"),
+          },
+          { label: "Memories", value: result.mentioned_by_memories.map((m) => m.content).join("\n") },
+          { label: "Episodes", value: result.mentioned_by_episodes.map((e) => e.title).join("\n") },
+          { label: "Skills", value: result.mentioned_by_skills.map((s) => s.name).join("\n") },
+          { label: "Decisions", value: result.mentioned_by_adrs.map((a) => `${a.adr} — ${a.title}`).join("\n") },
         ],
-      };
+      });
     }
   );
 }

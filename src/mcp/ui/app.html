@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mem-port</title>
+    <style>
+      /*
+       * The host renders this in a sandboxed iframe and tells us which theme it
+       * is using. Both palettes are defined up front and selected by the
+       * data-theme attribute the app sets, with prefers-color-scheme as the
+       * fallback for a host that never sends context.
+       */
+      :root {
+        --bg: transparent;
+        --fg: #1a1a19;
+        --muted: #6b6b68;
+        --card: #fdfdfc;
+        --border: #e4e4e1;
+        --accent: #b8552f;
+      }
+      :root[data-theme="dark"] {
+        --fg: #ecebe8;
+        --muted: #9a9a95;
+        --card: #23231f;
+        --border: #35352f;
+        --accent: #e08c62;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --fg: #ecebe8;
+          --muted: #9a9a95;
+          --card: #23231f;
+          --border: #35352f;
+          --accent: #e08c62;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 4px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .heading {
+        margin: 0 0 12px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .cards {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+
+      .card-title {
+        margin: 0;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .card-subtitle {
+        margin: 4px 0 0;
+        overflow-wrap: anywhere;
+      }
+      .card-meta,
+      .detail-subtitle,
+      .section-label {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+
+      .detail-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .detail-subtitle {
+        margin: 4px 0 0;
+      }
+
+      .section {
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+      .section-label {
+        margin: 0 0 4px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+      .section-value {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      /* Long prose (an ADR's context, a skill's procedure) scrolls in place
+         rather than pushing the whole conversation down. */
+      .section-value.long {
+        max-height: 260px;
+        overflow-y: auto;
+      }
+
+      .empty {
+        margin: 0;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <p class="empty">Loading…</p>
+    </div>
+  </body>
+</html>

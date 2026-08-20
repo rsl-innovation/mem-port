@@ -1,9 +1,9 @@
 type TextBlock = { type: "text"; text: string };
 
 /**
- * Read tools append an A2UI resource block after their text block (see
- * mcp/a2ui.ts), so content is no longer text-only. The text block stays first,
- * which is what callers here read.
+ * A tool result's content is a list of blocks, not necessarily one text block.
+ * The CLI only calls export/import, which return text alone today, but reading
+ * by type rather than by index keeps that assumption from being load-bearing.
  */
 type ResourceBlock = { type: "resource"; resource: { uri: string; mimeType: string; text: string } };
 
@@ -12,7 +12,7 @@ interface ToolCallResult {
   isError?: boolean;
 }
 
-/** The text block a tool returned, ignoring any A2UI resource alongside it. */
+/** The text block a tool returned, ignoring any other block alongside it. */
 export function firstText(result: ToolCallResult): string | undefined {
   return result.content.find((block): block is TextBlock => block.type === "text")?.text;
 }

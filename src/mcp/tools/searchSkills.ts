@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { a2uiList, captionOf, formatScore, formatTags } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, formatScore, formatTags, listResult } from "../view.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 interface SkillRow {
@@ -16,9 +18,11 @@ interface SkillRow {
 }
 
 export function registerSearchSkills(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "search_skills",
     {
+      _meta: appToolMeta(),
       description:
         "Semantically search skills by the situation or task at hand, ranked by relevance. Call this proactively before starting a task that might already have a known procedure — before assuming you need to work it out from scratch.",
       inputSchema: {
@@ -75,21 +79,16 @@ export function registerSearchSkills(server: McpServer, root: Surreal, embedding
           score: row.score,
         }));
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(results, null, 2) },
-          ...a2uiList(extra, {
-            tool: "search_skills",
-            heading: `Skills for "${args.query}" (${results.length})`,
-            empty: "No skills matched that query.",
-            items: results.map((skill) => ({
-              title: skill.name,
-              subtitle: skill.description,
-              meta: captionOf([formatScore(skill.score), formatTags(skill.tags), skill.source]),
-            })),
-          }),
-        ],
-      };
+      return listResult(extra, results, {
+        tool: "search_skills",
+        heading: `Skills for "${args.query}" (${results.length})`,
+        empty: "No skills matched that query.",
+        items: results.map((skill) => ({
+          title: skill.name,
+          subtitle: skill.description,
+          meta: captionOf([formatScore(skill.score), formatTags(skill.tags), skill.source]),
+        })),
+      });
     }
   );
 }
