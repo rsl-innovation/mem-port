@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { a2uiDetail, captionOf, formatTags, formatWhen } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, detailResult, formatTags, formatWhen } from "../view.js";
 
 interface SkillRow {
   id: unknown;
@@ -18,9 +20,11 @@ interface SkillRow {
 }
 
 export function registerGetSkill(server: McpServer, root: Surreal): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "get_skill",
     {
+      _meta: appToolMeta(),
       description: "Get a skill by exact name or id, including the entities it mentions.",
       inputSchema: {
         name: z.string().optional().describe("Exact skill name to look up, e.g. \"debug-flaky-test\". Provide this or 'id', not both."),
@@ -70,23 +74,18 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
         mentioned_entities: skill.mentioned_entities.map((e) => ({ id: String(e.id), name: e.name })),
       };
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(result, null, 2) },
-          ...a2uiDetail(extra, {
-            tool: "get_skill",
-            key: result.name,
-            title: result.name,
-            subtitle: result.description,
-            sections: [
-              { label: "Procedure", value: result.content },
-              { label: "Tags", value: formatTags(result.tags) },
-              { label: "Mentions", value: result.mentioned_entities.map((e) => e.name).join(", ") },
-              { label: "Recorded", value: captionOf([result.source, result.status, formatWhen(result.updated_at)]) },
-            ],
-          }),
+      return detailResult(extra, result, {
+        tool: "get_skill",
+        key: result.name,
+        title: result.name,
+        subtitle: result.description,
+        sections: [
+          { label: "Procedure", value: result.content },
+          { label: "Tags", value: formatTags(result.tags) },
+          { label: "Mentions", value: result.mentioned_entities.map((e) => e.name).join(", ") },
+          { label: "Recorded", value: captionOf([result.source, result.status, formatWhen(result.updated_at)]) },
         ],
-      };
+      });
     }
   );
 }

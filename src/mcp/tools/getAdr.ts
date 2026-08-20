@@ -3,7 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { formatAdrNumber } from "../../db/adr.js";
-import { a2uiDetail, captionOf, formatTags, formatWhen } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, detailResult, formatTags, formatWhen } from "../view.js";
 
 interface AdrRow {
   id: unknown;
@@ -32,9 +34,11 @@ interface AdrLinkRow {
 }
 
 export function registerGetAdr(server: McpServer, root: Surreal): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "get_adr",
     {
+      _meta: appToolMeta(),
       description:
         "Get one architectural decision record in full — context, decision, consequences, alternatives, the entities it concerns, and both ends of its supersede chain.",
       inputSchema: {
@@ -111,29 +115,24 @@ export function registerGetAdr(server: McpServer, root: Surreal): void {
         mentioned_entities: adr.mentioned_entities.map((e) => ({ id: String(e.id), name: e.name })),
       };
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(result, null, 2) },
-          ...a2uiDetail(extra, {
-            tool: "get_adr",
-            key: String(result.number),
-            title: `${result.adr} — ${result.title}`,
-            subtitle: captionOf([result.status, formatWhen(result.decided_at), formatTags(result.tags)]),
-            sections: [
-              { label: "Context", value: result.context },
-              { label: "Decision", value: result.decision },
-              { label: "Consequences", value: result.consequences },
-              { label: "Alternatives", value: result.alternatives },
-              { label: "Supersedes", value: result.supersedes ? `${result.supersedes.adr} — ${result.supersedes.title}` : null },
-              {
-                label: "Superseded by",
-                value: result.superseded_by.map((a) => `${a.adr} — ${a.title}`).join("\n"),
-              },
-              { label: "Concerns", value: result.mentioned_entities.map((e) => e.name).join(", ") },
-            ],
-          }),
+      return detailResult(extra, result, {
+        tool: "get_adr",
+        key: String(result.number),
+        title: `${result.adr} — ${result.title}`,
+        subtitle: captionOf([result.status, formatWhen(result.decided_at), formatTags(result.tags)]),
+        sections: [
+          { label: "Context", value: result.context },
+          { label: "Decision", value: result.decision },
+          { label: "Consequences", value: result.consequences },
+          { label: "Alternatives", value: result.alternatives },
+          { label: "Supersedes", value: result.supersedes ? `${result.supersedes.adr} — ${result.supersedes.title}` : null },
+          {
+            label: "Superseded by",
+            value: result.superseded_by.map((a) => `${a.adr} — ${a.title}`).join("\n"),
+          },
+          { label: "Concerns", value: result.mentioned_entities.map((e) => e.name).join(", ") },
         ],
-      };
+      });
     }
   );
 }

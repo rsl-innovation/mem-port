@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { a2uiList, captionOf, formatScore } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, formatScore, listResult } from "../view.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 const MEMORY_TYPES = ["fact", "preference", "decision", "task", "reference"] as const;
@@ -16,9 +18,11 @@ interface MemoryRow {
 }
 
 export function registerSearchMemory(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "search_memory",
     {
+      _meta: appToolMeta(),
       description:
         "Semantically search memories by meaning, ranked by relevance. Call this proactively at the start of a task that could be informed by prior context — before assuming none exists, not only when the user asks you to recall something.",
       inputSchema: {
@@ -75,20 +79,15 @@ export function registerSearchMemory(server: McpServer, root: Surreal, embedding
           score: row.score,
         }));
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(results, null, 2) },
-          ...a2uiList(extra, {
-            tool: "search_memory",
-            heading: `Memories for "${args.query}" (${results.length})`,
-            empty: "No memories matched that query.",
-            items: results.map((memory) => ({
-              title: memory.content,
-              meta: captionOf([memory.memory_type, `importance ${memory.importance}`, formatScore(memory.score)]),
-            })),
-          }),
-        ],
-      };
+      return listResult(extra, results, {
+        tool: "search_memory",
+        heading: `Memories for "${args.query}" (${results.length})`,
+        empty: "No memories matched that query.",
+        items: results.map((memory) => ({
+          title: memory.content,
+          meta: captionOf([memory.memory_type, `importance ${memory.importance}`, formatScore(memory.score)]),
+        })),
+      });
     }
   );
 }

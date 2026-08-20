@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { DateTime, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { a2uiList, captionOf, formatWhen } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, formatWhen, listResult } from "../view.js";
 
 interface EpisodeRow {
   id: unknown;
@@ -13,9 +15,11 @@ interface EpisodeRow {
 }
 
 export function registerListEpisodes(server: McpServer, root: Surreal): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "list_episodes",
     {
+      _meta: appToolMeta(),
       description: "List recorded episodes, newest first, optionally filtered by source or time range.",
       inputSchema: {
         since: z
@@ -65,21 +69,16 @@ export function registerListEpisodes(server: McpServer, root: Surreal): void {
         occurred_at: row.occurred_at,
       }));
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(results, null, 2) },
-          ...a2uiList(extra, {
-            tool: "list_episodes",
-            heading: `Episodes (${results.length})`,
-            empty: "No episodes recorded in this library yet.",
-            items: results.map((episode) => ({
-              title: episode.title,
-              subtitle: episode.content,
-              meta: captionOf([formatWhen(episode.occurred_at), episode.source]),
-            })),
-          }),
-        ],
-      };
+      return listResult(extra, results, {
+        tool: "list_episodes",
+        heading: `Episodes (${results.length})`,
+        empty: "No episodes recorded in this library yet.",
+        items: results.map((episode) => ({
+          title: episode.title,
+          subtitle: episode.content,
+          meta: captionOf([formatWhen(episode.occurred_at), episode.source]),
+        })),
+      });
     }
   );
 }

@@ -2,7 +2,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { a2uiList, captionOf, formatTags } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, formatTags, listResult } from "../view.js";
 
 interface SkillRow {
   id: unknown;
@@ -15,9 +17,11 @@ interface SkillRow {
 }
 
 export function registerListSkills(server: McpServer, root: Surreal): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "list_skills",
     {
+      _meta: appToolMeta(),
       description: "List saved skills, newest first, optionally filtered by tag or source.",
       inputSchema: {
         tag: z.string().optional().describe('Only include skills with this tag, e.g. "testing".'),
@@ -58,21 +62,16 @@ export function registerListSkills(server: McpServer, root: Surreal): void {
         created_at: row.created_at,
       }));
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(results, null, 2) },
-          ...a2uiList(extra, {
-            tool: "list_skills",
-            heading: `Skills (${results.length})`,
-            empty: "No skills saved in this library yet.",
-            items: results.map((skill) => ({
-              title: skill.name,
-              subtitle: skill.description,
-              meta: captionOf([formatTags(skill.tags), skill.source]),
-            })),
-          }),
-        ],
-      };
+      return listResult(extra, results, {
+        tool: "list_skills",
+        heading: `Skills (${results.length})`,
+        empty: "No skills saved in this library yet.",
+        items: results.map((skill) => ({
+          title: skill.name,
+          subtitle: skill.description,
+          meta: captionOf([formatTags(skill.tags), skill.source]),
+        })),
+      });
     }
   );
 }

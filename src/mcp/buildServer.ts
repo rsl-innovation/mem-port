@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { VERSION } from "../version.js";
+import { registerAppUi } from "./apps.js";
 import { registerSaveMemory } from "./tools/saveMemory.js";
 import { registerSearchMemory } from "./tools/searchMemory.js";
 import { registerSaveEpisode } from "./tools/saveEpisode.js";
@@ -36,6 +37,9 @@ Don't save: information already derivable from the current codebase/files, one-o
 
 export function buildServer(root: Surreal, embeddings: EmbeddingProvider, dataDir: string): McpServer {
   const server = new McpServer({ name: "mem-port", version: VERSION }, { instructions: SERVER_INSTRUCTIONS });
+
+  // The single ui:// template every read tool points at via _meta.ui.resourceUri.
+  registerAppUi(server);
 
   registerSaveMemory(server, root, embeddings);
   registerSearchMemory(server, root, embeddings);

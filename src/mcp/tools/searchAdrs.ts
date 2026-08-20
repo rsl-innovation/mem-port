@@ -3,7 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { ADR_STATUSES, formatAdrNumber } from "../../db/adr.js";
-import { a2uiList, captionOf, formatScore, formatTags } from "../a2ui.js";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { appToolMeta } from "../apps.js";
+import { captionOf, formatScore, formatTags, listResult } from "../view.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 interface AdrRow {
@@ -19,9 +21,11 @@ interface AdrRow {
 }
 
 export function registerSearchAdrs(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
-  server.registerTool(
+  registerAppTool(
+    server,
     "search_adrs",
     {
+      _meta: appToolMeta(),
       description:
         "Semantically search architectural decision records, ranked by relevance. Call this proactively before re-litigating a technical choice or proposing an approach in an area that may already have a decision on record — a superseded or deprecated ADR is itself useful context about what was already tried.",
       inputSchema: {
@@ -88,21 +92,16 @@ export function registerSearchAdrs(server: McpServer, root: Surreal, embeddings:
           score: row.score,
         }));
 
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(results, null, 2) },
-          ...a2uiList(extra, {
-            tool: "search_adrs",
-            heading: `Decisions for "${args.query}" (${results.length})`,
-            empty: "No decisions matched that query.",
-            items: results.map((adr) => ({
-              title: `${adr.adr} — ${adr.title}`,
-              subtitle: adr.decision,
-              meta: captionOf([formatScore(adr.score), adr.status, formatTags(adr.tags)]),
-            })),
-          }),
-        ],
-      };
+      return listResult(extra, results, {
+        tool: "search_adrs",
+        heading: `Decisions for "${args.query}" (${results.length})`,
+        empty: "No decisions matched that query.",
+        items: results.map((adr) => ({
+          title: `${adr.adr} — ${adr.title}`,
+          subtitle: adr.decision,
+          meta: captionOf([formatScore(adr.score), adr.status, formatTags(adr.tags)]),
+        })),
+      });
     }
   );
 }

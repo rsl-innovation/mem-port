@@ -1,7 +1,7 @@
 {
   "name": "@rsl-innovation/mem-port",
   "version": "0.4.0",
-  "description": "A portable, long-term agentic memory MCP server — a thumb drive for your AI context.",
+  "description": "A portable, long-term agentic memory MCP server \u2014 a thumb drive for your AI context.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -26,17 +26,23 @@
     "dist"
   ],
   "scripts": {
+    "build:ui": "node scripts/build-app-ui.mjs",
+    "prebuild": "npm run build:ui",
     "build": "tsup",
     "prepublishOnly": "npm run build",
     "preversion": "npm run typecheck && npm test",
+    "predev": "npm run build:ui",
     "dev": "tsx src/cli.ts serve",
+    "pretest": "npm run build:ui",
     "test": "MEM_PORT_MODEL_CACHE_DIR=$PWD/.test-model-cache vitest run",
-    "typecheck": "tsc --noEmit"
+    "pretypecheck": "npm run build:ui",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.ui.json"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@surrealdb/node": "^3.0.3",
-    "@huggingface/transformers": "^4.2.0",
     "surrealdb": "^2.0.8",
     "zod": "^3.25.0"
   },
