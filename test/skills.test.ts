@@ -100,6 +100,88 @@ describe("skills", () => {
     expect(detail).toContain("Revoke the leaked key");
   }, 60_000);
 
+  it("upserts on name instead of forking the skill, keeping the replaced version reachable", async () => {
+    const first = await callTool(PORT, "upsert-lib", "save_skill", {
+      name: "deploy-checkout",
+      description: "Use when shipping the checkout service",
+      content: "1. Run the smoke suite.\n2. Deploy to staging.",
+      tags: ["deploy"],
+      source: "claude-code",
+      entity_refs: ["checkout-service"],
+    });
+    const firstText_ = firstText(first) ?? "";
+    const originalId = firstText_.match(/Saved skill (\S+)/)?.[1];
+    expect(originalId, "a first save should create").toBeTruthy();
+
+    const second = await callTool(PORT, "upsert-lib", "save_skill", {
+      name: "deploy-checkout",
+      description: "Use when shipping the checkout service",
+      content: "1. Run the smoke suite.\n2. Deploy to staging.\n3. Watch error rates for 10 minutes.",
+      tags: ["deploy", "ops"],
+      source: "claude-code",
+      entity_refs: ["checkout-service", "pagerduty"],
+    });
+    const secondText = firstText(second) ?? "";
+    expect(secondText, "a second save under the same name should update").toMatch(/^Updated skill/);
+
+    // The id is stable across the update, so anything holding it still resolves.
+    expect(secondText).toContain(String(originalId));
+
+    // Exactly one active skill for the name — the duplicate this replaces.
+    const listed = JSON.parse(firstText(await callTool(PORT, "upsert-lib", "list_skills", {})) ?? "[]") as Array<{
+      name: string;
+    }>;
+    expect(listed.filter((s) => s.name === "deploy-checkout")).toHaveLength(1);
+
+    // The name resolves to the CURRENT version, not the archived one.
+    const current = JSON.parse(firstText(await callTool(PORT, "upsert-lib", "get_skill", { name: "deploy-checkout" })) ?? "{}");
+    expect(current.content).toMatch(/Watch error rates/);
+    expect(current.tags).toEqual(["deploy", "ops"]);
+
+    // entity_refs describe the revised skill, so edges are replaced, not merged.
+    expect(current.mentioned_entities.map((e: { name: string }) => e.name).sort()).toEqual([
+      "checkout-service",
+      "pagerduty",
+    ]);
+
+    // The replaced version survives, reachable by the id the update reported.
+    const archivedId = secondText.match(/archived as (\S+?)\)/)?.[1];
+    expect(archivedId, "the update should name the archived version").toBeTruthy();
+    const archived = JSON.parse(firstText(await callTool(PORT, "upsert-lib", "get_skill", { id: archivedId! })) ?? "{}");
+    expect(archived.status).toBe("archived");
+    expect(archived.content).toMatch(/Deploy to staging\.$/);
+    expect(archived.content, "the archived copy must be the OLD body").not.toMatch(/Watch error rates/);
+
+    // A THIRD save is the case that matters most: by now the name has two rows
+    // behind it, which is exactly the state that made a compound
+    // "name AND status" lookup come back empty. If that regressed, this save
+    // would silently create a fork instead of updating.
+    const third = await callTool(PORT, "upsert-lib", "save_skill", {
+      name: "deploy-checkout",
+      description: "Use when shipping the checkout service",
+      content: "1. Run the smoke suite.\n2. Deploy.\n3. Watch error rates.\n4. Announce in #ship.",
+      tags: ["deploy"],
+      source: "claude-code",
+    });
+    expect(firstText(third) ?? "", "a third save must still update, not fork").toMatch(/^Updated skill/);
+    expect(firstText(third) ?? "").toContain(String(originalId));
+
+    const stillOne = JSON.parse(firstText(await callTool(PORT, "upsert-lib", "list_skills", {})) ?? "[]") as Array<{
+      name: string;
+    }>;
+    expect(stillOne.filter((s) => s.name === "deploy-checkout"), "still exactly one active row").toHaveLength(1);
+
+    const latest = JSON.parse(firstText(await callTool(PORT, "upsert-lib", "get_skill", { name: "deploy-checkout" })) ?? "{}");
+    expect(latest.content).toMatch(/Announce in #ship/);
+
+    // Archived versions must stay out of search, or a superseded procedure
+    // competes with the live one for the same query.
+    const hits = JSON.parse(
+      firstText(await callTool(PORT, "upsert-lib", "search_skills", { query: "shipping the checkout service" })) ?? "[]"
+    ) as Array<{ name: string }>;
+    expect(hits.filter((s) => s.name === "deploy-checkout")).toHaveLength(1);
+  }, 60_000);
+
   it("never leaks skills across library-ids", async () => {
     await callTool(PORT, "skills-tenant-a", "save_skill", {
       name: "tenant-a-only-skill",

@@ -25,7 +25,8 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
     "get_skill",
     {
       _meta: appToolMeta(),
-      description: "Get a skill by exact name or id, including the entities it mentions.",
+      description:
+        "Get a skill by exact name or id, including its full procedure body and the entities it mentions. Call this after search_skills or list_skills, which return descriptions only. A name resolves to the current version; earlier versions that save_skill replaced are reachable by id.",
       inputSchema: {
         name: z.string().optional().describe("Exact skill name to look up, e.g. \"debug-flaky-test\". Provide this or 'id', not both."),
         id: z
@@ -46,12 +47,39 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
 
       const session = await resolveLibrary(extra, root);
 
-      const target = args.id ? `[<record<skill>> $id]` : `(SELECT VALUE id FROM skill WHERE name = $name LIMIT 1)`;
+      // A name resolves to the LIVE skill only, or a superseded procedure could
+      // come back reading as current. Reaching an archived version stays
+      // possible, deliberately, by its id.
+      //
+      // Filter status in JS, not in the WHERE clause.
+      //
+      // `WHERE name = $name AND status = 'active'` returns NOTHING once two rows
+      // share a name, even though each condition alone matches — verified
+      // against a live library holding exactly one active and one archived 'dc':
+      //   name only              -> ["archived", "active"]
+      //   status only            -> the active row
+      //   name AND status        -> []
+      // The non-unique skill_name_idx is what the planner reaches for, and the
+      // conjunction comes back empty across sessions. Since save_skill now
+      // archives the version it replaces, duplicate names are the normal case,
+      // so the compound form cannot be used anywhere on this table.
+      let recordId: unknown;
+      if (args.id) {
+        recordId = new StringRecordId(args.id);
+      } else {
+        const [matches] = await session.query<[Array<{ id: unknown; status: string }>]>(
+          `SELECT id, status FROM skill WHERE name = $name`,
+          { name: args.name }
+        );
+        recordId = matches.find((row) => row.status === "active")?.id;
+      }
 
-      const [rows] = await session.query<[SkillRow[]]>(
-        `SELECT *, ->mentions->entity.{id, name} AS mentioned_entities FROM ${target}`,
-        args.id ? { id: new StringRecordId(args.id) } : { name: args.name }
-      );
+      const [rows] = recordId
+        ? await session.query<[SkillRow[]]>(
+            `SELECT *, ->mentions->entity.{id, name} AS mentioned_entities FROM [<record<skill>> $id]`,
+            { id: recordId }
+          )
+        : [[]];
 
       const skill = rows[0];
       if (!skill) {
