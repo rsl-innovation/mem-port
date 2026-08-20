@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import { a2uiDetail, captionOf, formatTags, formatWhen } from "../a2ui.js";
 
 interface SkillRow {
   id: unknown;
@@ -70,7 +71,21 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
       };
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ...a2uiDetail(extra, {
+            tool: "get_skill",
+            key: result.name,
+            title: result.name,
+            subtitle: result.description,
+            sections: [
+              { label: "Procedure", value: result.content },
+              { label: "Tags", value: formatTags(result.tags) },
+              { label: "Mentions", value: result.mentioned_entities.map((e) => e.name).join(", ") },
+              { label: "Recorded", value: captionOf([result.source, result.status, formatWhen(result.updated_at)]) },
+            ],
+          }),
+        ],
       };
     }
   );

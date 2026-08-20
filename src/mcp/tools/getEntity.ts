@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { formatAdrNumber } from "../../db/adr.js";
+import { a2uiDetail } from "../a2ui.js";
 
 interface EntityRow {
   id: unknown;
@@ -94,7 +95,26 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
       };
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ...a2uiDetail(extra, {
+            tool: "get_entity",
+            key: result.name,
+            title: result.name,
+            subtitle: result.entity_type,
+            sections: [
+              { label: "Summary", value: result.summary },
+              {
+                label: "Related entities",
+                value: result.related_entities.map((r) => `${r.relation_type}: ${r.name}`).join("\n"),
+              },
+              { label: "Memories", value: result.mentioned_by_memories.map((m) => m.content).join("\n") },
+              { label: "Episodes", value: result.mentioned_by_episodes.map((e) => e.title).join("\n") },
+              { label: "Skills", value: result.mentioned_by_skills.map((s) => s.name).join("\n") },
+              { label: "Decisions", value: result.mentioned_by_adrs.map((a) => `${a.adr} — ${a.title}`).join("\n") },
+            ],
+          }),
+        ],
       };
     }
   );

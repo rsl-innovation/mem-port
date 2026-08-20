@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { formatAdrNumber } from "../../db/adr.js";
+import { a2uiDetail, captionOf, formatTags, formatWhen } from "../a2ui.js";
 
 interface AdrRow {
   id: unknown;
@@ -111,7 +112,27 @@ export function registerGetAdr(server: McpServer, root: Surreal): void {
       };
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+          ...a2uiDetail(extra, {
+            tool: "get_adr",
+            key: String(result.number),
+            title: `${result.adr} — ${result.title}`,
+            subtitle: captionOf([result.status, formatWhen(result.decided_at), formatTags(result.tags)]),
+            sections: [
+              { label: "Context", value: result.context },
+              { label: "Decision", value: result.decision },
+              { label: "Consequences", value: result.consequences },
+              { label: "Alternatives", value: result.alternatives },
+              { label: "Supersedes", value: result.supersedes ? `${result.supersedes.adr} — ${result.supersedes.title}` : null },
+              {
+                label: "Superseded by",
+                value: result.superseded_by.map((a) => `${a.adr} — ${a.title}`).join("\n"),
+              },
+              { label: "Concerns", value: result.mentioned_entities.map((e) => e.name).join(", ") },
+            ],
+          }),
+        ],
       };
     }
   );

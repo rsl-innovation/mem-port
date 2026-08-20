@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
 import { ADR_STATUSES, formatAdrNumber } from "../../db/adr.js";
+import { a2uiList, captionOf, formatTags, formatWhen } from "../a2ui.js";
 
 interface AdrRow {
   id: unknown;
@@ -79,7 +80,19 @@ export function registerListAdrs(server: McpServer, root: Surreal): void {
       }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+          ...a2uiList(extra, {
+            tool: "list_adrs",
+            heading: `Decisions (${results.length})`,
+            empty: "No decisions recorded in this library yet.",
+            items: results.map((adr) => ({
+              title: `${adr.adr} — ${adr.title}`,
+              subtitle: adr.decision,
+              meta: captionOf([adr.status, formatWhen(adr.decided_at), formatTags(adr.tags), adr.source]),
+            })),
+          }),
+        ],
       };
     }
   );

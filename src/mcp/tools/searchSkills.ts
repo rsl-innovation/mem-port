@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import { a2uiList, captionOf, formatScore, formatTags } from "../a2ui.js";
 import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
 interface SkillRow {
@@ -75,7 +76,19 @@ export function registerSearchSkills(server: McpServer, root: Surreal, embedding
         }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+          ...a2uiList(extra, {
+            tool: "search_skills",
+            heading: `Skills for "${args.query}" (${results.length})`,
+            empty: "No skills matched that query.",
+            items: results.map((skill) => ({
+              title: skill.name,
+              subtitle: skill.description,
+              meta: captionOf([formatScore(skill.score), formatTags(skill.tags), skill.source]),
+            })),
+          }),
+        ],
       };
     }
   );

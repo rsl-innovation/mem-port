@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { startDaemon } from "./daemon.js";
-import { callTool } from "./mcpClient.js";
+import { callTool, firstText } from "./mcpClient.js";
 import { VERSION } from "./version.js";
 
 const USAGE = `Usage:
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
         memory_types: values["memory-types"]?.split(","),
         since: values.since,
       });
-      console.log(result.content[0]?.text);
+      console.log(firstText(result));
       break;
     }
 
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
         on_conflict: values["on-conflict"],
         dry_run: values["dry-run"],
       });
-      console.log(result.content[0]?.text);
+      console.log(firstText(result));
       break;
     }
 
