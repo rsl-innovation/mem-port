@@ -1,23 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { captionOf, formatScore, listResult } from "../view.js";
-import type { EmbeddingProvider } from "../../embeddings/provider.js";
+import { MEMORY_TYPES } from "../../interfaces/memories.interface.js";
 
-const MEMORY_TYPES = ["fact", "preference", "decision", "task", "reference"] as const;
-
-interface MemoryRow {
-  id: unknown;
-  content: string;
-  memory_type: string;
-  importance: number;
-  score: number;
-}
-
-export function registerSearchMemory(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
+export function registerSearchMemory(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "search_memory",
@@ -48,31 +38,20 @@ export function registerSearchMemory(server: McpServer, root: Surreal, embedding
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
-      const queryVector = await embeddings.embed(args.query);
+      const store = await resolveLibrary(extra, deps.store);
+      const queryVector = await deps.embeddings.embed(args.query);
 
-      const typeFilter = args.memory_types && args.memory_types.length > 0 ? "AND memory_type IN $types" : "";
-
-      // Brute-force cosine similarity: no vector index yet (see build-order phase 3 —
-      // an HNSW/DISKANN index is added later once library sizes justify it).
-      const [rows] = await session.query<[MemoryRow[]]>(
-        `SELECT id, content, memory_type, importance, vector::similarity::cosine(embedding, $queryVector) AS score
-         FROM memory
-         WHERE status = 'active' AND embedding != NONE ${typeFilter}
-         ORDER BY score DESC
-         LIMIT $limit`,
-        {
-          queryVector,
-          types: args.memory_types,
-          limit: args.limit ?? 10,
-        }
-      );
+      const rows = await store.memories.search(queryVector, {
+        memory_types: args.memory_types,
+        status: "active",
+        limit: args.limit ?? 10,
+      });
 
       const minScore = args.min_score;
       const results = rows
         .filter((row) => minScore === undefined || row.score >= minScore)
         .map((row) => ({
-          id: String(row.id),
+          id: row.id,
           content: row.content,
           memory_type: row.memory_type,
           importance: row.importance,

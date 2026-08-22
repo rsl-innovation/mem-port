@@ -1,18 +1,20 @@
 import http from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Surreal } from "surrealdb";
 import { resolveConfig, type Config } from "./config.js";
-import { getRootConnection, closeRootConnection } from "./db/connection.js";
-import { buildServer } from "./mcp/buildServer.js";
+import { closeRootConnection, getStoreProvider } from "./db/connection.js";
+import type { StoreProvider } from "./interfaces/provider.interface.js";
+import { buildServer, type ServerDeps } from "./mcp/buildServer.js";
 import { LocalEmbeddingProvider } from "./embeddings/localProvider.js";
-import type { EmbeddingProvider } from "./embeddings/provider.js";
 
 const MCP_PATH = "/mcp";
 
 export async function startDaemon(overrides: Partial<Config> = {}): Promise<http.Server> {
   const config = resolveConfig(overrides);
-  const root = await getRootConnection(config.dataDir);
+  // Built once per process, not per request: it owns the connection and the
+  // per-library session cache, both of which would be pointless if rebuilt.
+  const store = getStoreProvider(config);
   const embeddings = new LocalEmbeddingProvider(config.dataDir);
+  const deps: ServerDeps = { store, embeddings, dataDir: config.dataDir };
 
   const httpServer = http.createServer((req, res) => {
     if (req.method !== "POST" || req.url !== MCP_PATH) {
@@ -21,7 +23,7 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
       return;
     }
 
-    void handleMcpRequest(root, embeddings, config.dataDir, req, res);
+    void handleMcpRequest(deps, req, res);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -44,16 +46,14 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
 }
 
 async function handleMcpRequest(
-  root: Surreal,
-  embeddings: EmbeddingProvider,
-  dataDir: string,
+  deps: ServerDeps,
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
   // Stateless mode: a fresh McpServer + transport per request, closing over the
   // library-id-resolved session inside tool handlers. Avoids a class of bugs
   // where a long-lived MCP session receives a different library-id on a later call.
-  const server = buildServer(root, embeddings, dataDir);
+  const server = buildServer(deps);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
   res.on("close", () => {

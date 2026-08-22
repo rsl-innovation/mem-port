@@ -1,11 +1,11 @@
-import type { SurrealSession } from "surrealdb";
+import type { SurrealQueryable } from "surrealdb";
 
 /**
  * Idempotent schema migration, applied once per library (forked session) on
  * first use. `DEFINE ... IF NOT EXISTS` makes re-running this safe across
  * daemon restarts, where the in-process "already migrated" cache is lost.
  */
-export async function ensureSchema(session: SurrealSession): Promise<void> {
+export async function ensureSchema(session: SurrealQueryable): Promise<void> {
   await session.query(`
     DEFINE TABLE IF NOT EXISTS entity SCHEMAFULL;
     DEFINE FIELD IF NOT EXISTS name        ON entity TYPE string;

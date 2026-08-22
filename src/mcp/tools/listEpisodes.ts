@@ -1,20 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DateTime, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { captionOf, formatWhen, listResult } from "../view.js";
 
-interface EpisodeRow {
-  id: unknown;
-  title: string;
-  content: string;
-  source: string;
-  occurred_at: unknown;
-}
-
-export function registerListEpisodes(server: McpServer, root: Surreal): void {
+export function registerListEpisodes(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "list_episodes",
@@ -33,41 +25,14 @@ export function registerListEpisodes(server: McpServer, root: Surreal): void {
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      const conditions: string[] = [];
-      const bindings: Record<string, unknown> = { limit: args.limit ?? 20 };
-
-      if (args.since) {
-        conditions.push("occurred_at >= $since");
-        bindings.since = new DateTime(args.since);
-      }
-      if (args.until) {
-        conditions.push("occurred_at <= $until");
-        bindings.until = new DateTime(args.until);
-      }
-      if (args.source) {
-        conditions.push("source = $source");
-        bindings.source = args.source;
-      }
-
-      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-      const [rows] = await session.query<[EpisodeRow[]]>(
-        `SELECT id, title, content, source, occurred_at FROM episode
-         ${whereClause}
-         ORDER BY occurred_at DESC
-         LIMIT $limit`,
-        bindings
-      );
-
-      const results = rows.map((row) => ({
-        id: String(row.id),
-        title: row.title,
-        content: row.content,
-        source: row.source,
-        occurred_at: row.occurred_at,
-      }));
+      const results = await store.episodes.list({
+        since: args.since,
+        until: args.until,
+        source: args.source,
+        limit: args.limit ?? 20,
+      });
 
       return listResult(extra, results, {
         tool: "list_episodes",

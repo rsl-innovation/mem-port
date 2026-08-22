@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 import { bundleSchema } from "../../port/bundleSchema.js";
 import { importBundle } from "../../port/importBundle.js";
 
-export function registerImportLibrary(server: McpServer, root: Surreal): void {
+export function registerImportLibrary(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "import_library",
     {
@@ -57,8 +57,8 @@ export function registerImportLibrary(server: McpServer, root: Surreal): void {
         };
       }
 
-      const session = await resolveLibrary(extra, root);
-      const result = await importBundle(session, parsed.data, {
+      const store = await resolveLibrary(extra, deps.store);
+      const result = await importBundle(store, parsed.data, {
         mode: args.mode,
         onConflict: args.on_conflict,
         dryRun: args.dry_run,

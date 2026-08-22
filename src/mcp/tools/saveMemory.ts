@@ -1,13 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { createMentionEdges, resolveEntityRefs } from "../../db/entities.js";
-import type { EmbeddingProvider } from "../../embeddings/provider.js";
+import type { ServerDeps } from "../buildServer.js";
+import { MEMORY_TYPES } from "../../interfaces/memories.interface.js";
 
-const MEMORY_TYPES = ["fact", "preference", "decision", "task", "reference"] as const;
-
-export function registerSaveMemory(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
+export function registerSaveMemory(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "save_memory",
     {
@@ -47,33 +44,21 @@ export function registerSaveMemory(server: McpServer, root: Surreal, embeddings:
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
-      const embedding = await embeddings.embed(args.content);
+      const store = await resolveLibrary(extra, deps.store);
+      const embedding = await deps.embeddings.embed(args.content);
 
-      const [created] = await session.query<[Array<{ id: unknown }>]>(
-        `CREATE memory CONTENT {
-           content: $content,
-           memory_type: $memory_type,
-           importance: $importance,
-           embedding: $embedding,
-           source_episode: $source_episode
-         }`,
-        {
-          content: args.content,
-          memory_type: args.memory_type ?? "fact",
-          importance: args.importance ?? 0.5,
-          embedding,
-          source_episode: args.source_episode_id ? new StringRecordId(args.source_episode_id) : undefined,
-        }
-      );
+      const id = await store.memories.create({
+        content: args.content,
+        memory_type: args.memory_type,
+        importance: args.importance,
+        embedding,
+        source_episode_id: args.source_episode_id,
+      });
 
-      const record = created[0];
-
-      const entityIds = await resolveEntityRefs(session, args.entity_refs);
-      await createMentionEdges(session, record.id, entityIds);
+      await store.graph.addMentions(id, await store.entities.resolveRefs(args.entity_refs));
 
       return {
-        content: [{ type: "text" as const, text: `Saved memory ${String(record.id)}` }],
+        content: [{ type: "text" as const, text: `Saved memory ${id}` }],
       };
     }
   );

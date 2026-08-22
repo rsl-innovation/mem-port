@@ -1,11 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DateTime, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { createMentionEdges, resolveEntityRefs } from "../../db/entities.js";
-import type { EmbeddingProvider } from "../../embeddings/provider.js";
+import type { ServerDeps } from "../buildServer.js";
 
-export function registerSaveEpisode(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
+export function registerSaveEpisode(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "save_episode",
     {
@@ -36,33 +34,21 @@ export function registerSaveEpisode(server: McpServer, root: Surreal, embeddings
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
-      const embedding = await embeddings.embed(`${args.title}\n${args.content}`);
+      const store = await resolveLibrary(extra, deps.store);
+      const embedding = await deps.embeddings.embed(`${args.title}\n${args.content}`);
 
-      const [created] = await session.query<[Array<{ id: unknown }>]>(
-        `CREATE episode CONTENT {
-           title: $title,
-           content: $content,
-           source: $source,
-           occurred_at: $occurred_at,
-           embedding: $embedding
-         }`,
-        {
-          title: args.title,
-          content: args.content,
-          source: args.source,
-          occurred_at: args.occurred_at ? new DateTime(args.occurred_at) : undefined,
-          embedding,
-        }
-      );
+      const id = await store.episodes.create({
+        title: args.title,
+        content: args.content,
+        source: args.source,
+        occurred_at: args.occurred_at,
+        embedding,
+      });
 
-      const record = created[0];
-
-      const entityIds = await resolveEntityRefs(session, args.entity_refs);
-      await createMentionEdges(session, record.id, entityIds);
+      await store.graph.addMentions(id, await store.entities.resolveRefs(args.entity_refs));
 
       return {
-        content: [{ type: "text" as const, text: `Saved episode ${String(record.id)}` }],
+        content: [{ type: "text" as const, text: `Saved episode ${id}` }],
       };
     }
   );
