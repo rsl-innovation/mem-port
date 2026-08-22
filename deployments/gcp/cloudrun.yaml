@@ -1,0 +1,98 @@
+# Cloud Run service for mem-port.
+#
+#   gcloud run services replace deployments/gcp/cloudrun.yaml --region=REGION
+#
+# Substitute PROJECT_ID, REGION and IMAGE before applying, or use deploy.sh
+# which does it for you.
+#
+# READ deployments/gcp/README.md BEFORE EXPOSING THIS. Ingress is deliberately
+# internal and invoker auth is required, because mem-port has no authentication
+# of its own yet: the library-id header names a tenant, it does not prove a
+# right to that tenant.
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: mem-port
+  annotations:
+    # internal        -> reachable only from the VPC / other Google services
+    # internal-and-cloud-load-balancing -> add a load balancer in front
+    # all             -> public. Do NOT set this until app-level auth exists.
+    run.googleapis.com/ingress: internal
+spec:
+  template:
+    metadata:
+      annotations:
+        # One instance is enough for a personal or small-team deployment, and
+        # it keeps the SurrealDB session count predictable.
+        autoscaling.knative.dev/maxScale: "2"
+
+        # Keeping one instance warm avoids paying the model load and the
+        # WebSocket handshake on the first request after an idle period.
+        autoscaling.knative.dev/minScale: "1"
+
+        # CPU is throttled to near zero between requests by default, which can
+        # drop the long-lived WebSocket to SurrealDB while idle. The SDK
+        # reconnects, but keeping the CPU allocated avoids the reconnect churn.
+        run.googleapis.com/cpu-throttling: "false"
+
+        # Direct VPC egress, so the database can live on a private address and
+        # never be exposed publicly. Drop both if your SurrealDB is reachable
+        # over the internet with TLS (wss://).
+        run.googleapis.com/network-interfaces: '[{"network":"default","subnetwork":"default"}]'
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+    spec:
+      # Node is single threaded and embedding inference is CPU-bound, so the
+      # platform default of 80 would just queue work behind one busy request.
+      containerConcurrency: 8
+      timeoutSeconds: 300
+      containers:
+        - image: IMAGE
+          ports:
+            # Cloud Run injects PORT; mem-port reads it when MEM_PORT_PORT is
+            # unset. Naming it here keeps the two in step.
+            - name: http1
+              containerPort: 8787
+          resources:
+            limits:
+              # The ONNX runtime plus the model needs headroom; 512Mi is tight.
+              cpu: "1"
+              memory: 1Gi
+          env:
+            # Bind all interfaces: Cloud Run health-checks the port from
+            # outside the process, so loopback would fail to start.
+            - name: MEM_PORT_HOST
+              value: "0.0.0.0"
+            - name: MEM_PORT_PORT
+              value: "8787"
+
+            # A hosted database is REQUIRED here. Cloud Run's filesystem is
+            # ephemeral and instances come and go, so the embedded engine would
+            # lose data on every replacement and let replicas diverge.
+            #
+            # ws:// or wss:// only, on SurrealDB 3.0+. Both are checked at
+            # startup; an http:// URL or a 2.x server is rejected with an
+            # explanation rather than failing on every request.
+            - name: MEM_PORT_DB_URL
+              value: "wss://your-surrealdb-host"
+            - name: MEM_PORT_DB_NAMESPACE
+              value: "memport"
+            - name: MEM_PORT_DB_USER
+              value: "root"
+
+            # Never a literal. Create with:
+            #   gcloud secrets create mem-port-db-pass --data-file=-
+            - name: MEM_PORT_DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: mem-port-db-pass
+                  key: latest
+
+            # Per instance, so the cluster sees this times maxScale.
+            - name: MEM_PORT_DB_MAX_SESSIONS
+              value: "64"
+
+            # Weights baked into the image at build time; nothing is fetched at
+            # runtime. Must match the Dockerfile.
+            - name: MEM_PORT_MODEL_CACHE_DIR
+              value: "/app/models"

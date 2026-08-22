@@ -28,11 +28,21 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once("error", reject);
-    httpServer.listen(config.port, "127.0.0.1", () => resolve());
+    httpServer.listen(config.port, config.host, () => resolve());
   });
 
   // eslint-disable-next-line no-console
-  console.error(`mem-port listening on http://127.0.0.1:${config.port}${MCP_PATH} (data dir: ${config.dataDir})`);
+  console.error(
+    `mem-port listening on http://${config.host}:${config.port}${MCP_PATH} ` +
+      `(store: ${config.store.driver}, data dir: ${config.dataDir})`
+  );
+  if (config.host !== "127.0.0.1" && config.host !== "localhost") {
+    console.error(
+      `WARNING: bound to ${config.host}, which is reachable beyond this machine. ` +
+        `mem-port has no authentication of its own — any caller that reaches this port can read and write ` +
+        `any library by setting the library-id header. Only do this behind a platform auth layer or a private network.`
+    );
+  }
 
   const shutdown = async (): Promise<void> => {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));

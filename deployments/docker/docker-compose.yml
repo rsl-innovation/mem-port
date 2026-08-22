@@ -1,0 +1,62 @@
+# mem-port with a hosted SurrealDB, as a deployment actually runs it.
+#
+#   docker compose -f deployments/docker/docker-compose.yml up --build
+#
+# This is the shape any ephemeral platform needs: the database is a separate
+# service with its own volume, so restarting or replacing mem-port loses
+# nothing and several replicas can share one store. The embedded engine cannot
+# do either.
+
+name: mem-port
+
+services:
+  surrealdb:
+    # 3.0+ is required, not preferred: sessions (tenancy) and transactions
+    # (import_library) are both 3.0 server features. Pinned rather than latest
+    # so an upstream major cannot silently change what this is tested against.
+    image: surrealdb/surrealdb:v3
+    command: start --user root --pass ${SURREAL_PASS:-root} rocksdb:/data/memport.db
+    user: root
+    volumes:
+      - surreal-data:/data
+    ports:
+      # Exposed for inspection from the host. Drop this in a real deployment —
+      # only mem-port needs to reach the database.
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "/surreal", "is-ready", "--endpoint", "http://127.0.0.1:8000"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  mem-port:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    environment:
+      MEM_PORT_HOST: 0.0.0.0
+      MEM_PORT_PORT: 8787
+      # ws://, never http:// — the HTTP engine supports neither sessions nor
+      # transactions, so mem-port rejects it at startup.
+      MEM_PORT_DB_URL: ws://surrealdb:8000
+      MEM_PORT_DB_USER: root
+      MEM_PORT_DB_PASS: ${SURREAL_PASS:-root}
+      MEM_PORT_DB_NAMESPACE: memport
+      # Per instance. With several replicas the cluster sees this many times
+      # the replica count, so keep it modest.
+      MEM_PORT_DB_MAX_SESSIONS: 64
+    ports:
+      # Loopback only. mem-port has NO authentication: anything that reaches
+      # this port can read and write any library by naming it in the library-id
+      # header. Do not publish it beyond the host until auth exists.
+      #
+      # Override the host side when a locally installed mem-port already holds
+      # 8787:  MEM_PORT_HOST_PORT=8799 docker compose ... up
+      - "127.0.0.1:${MEM_PORT_HOST_PORT:-8787}:8787"
+
+volumes:
+  surreal-data:

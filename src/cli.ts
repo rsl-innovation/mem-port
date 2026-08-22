@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { startDaemon } from "./daemon.js";
+import { loadEnvFile } from "./env.js";
 import { callTool, firstText } from "./mcpClient.js";
 import { VERSION } from "./version.js";
 
 const USAGE = `Usage:
-  mem-port serve [--port <port>] [--data-dir <dir>]
+  mem-port serve [--port <port>] [--data-dir <dir>] [--env-file <path>]
   mem-port export --library-id <id> [--port <port>] [--memory-types t1,t2] [--since <iso date>]
   mem-port import --library-id <id> --in <path> [--mode merge|overwrite] [--on-conflict skip|update] [--dry-run] [--port <port>]
   mem-port --version`;
@@ -27,8 +28,12 @@ async function main(): Promise<void> {
         options: {
           port: { type: "string" },
           "data-dir": { type: "string" },
+          "env-file": { type: "string" },
         },
       });
+      // Before resolveConfig reads anything, and only for `serve` — the client
+      // subcommands talk to an already-configured daemon over HTTP.
+      loadEnvFile(values["env-file"]);
       await startDaemon({
         port: values.port ? Number(values.port) : undefined,
         dataDir: values["data-dir"],

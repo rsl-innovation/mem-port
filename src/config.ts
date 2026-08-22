@@ -30,6 +30,15 @@ export interface SurrealStoreConfig {
 
 export interface Config {
   port: number;
+  /**
+   * Interface to bind. Defaults to loopback, which is the only thing currently
+   * standing between the MCP endpoint and anyone who can reach the host: there
+   * is no authentication on the request path, and `library-id` selects a
+   * tenant rather than proving a right to it. Set this to 0.0.0.0 only where
+   * something else — a platform auth layer, a private network — is enforcing
+   * who may connect.
+   */
+  host: string;
   dataDir: string;
   embeddingModel: string;
   store: SurrealStoreConfig;
@@ -150,10 +159,18 @@ function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreCon
 }
 
 export function resolveConfig(overrides: Partial<Config> = {}): Config {
-  const port = overrides.port ?? (process.env.MEM_PORT_PORT ? Number(process.env.MEM_PORT_PORT) : 8787);
+  // PORT is the convention every container platform injects (Cloud Run, Heroku,
+  // Fly); MEM_PORT_PORT stays ahead of it so an explicit setting still wins.
+  const portEnv = process.env.MEM_PORT_PORT ?? process.env.PORT;
+  const port = overrides.port ?? (portEnv ? Number(portEnv) : 8787);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid port "${portEnv}". Expected an integer between 0 and 65535.`);
+  }
+
+  const host = overrides.host ?? process.env.MEM_PORT_HOST ?? "127.0.0.1";
   const dataDir = overrides.dataDir ?? process.env.MEM_PORT_DATA_DIR ?? defaultDataDir();
   const embeddingModel =
     overrides.embeddingModel ?? process.env.MEM_PORT_EMBEDDING_MODEL ?? "Xenova/all-MiniLM-L6-v2";
   const store = resolveStoreConfig(dataDir, overrides.store);
-  return { port, dataDir, embeddingModel, store };
+  return { port, host, dataDir, embeddingModel, store };
 }

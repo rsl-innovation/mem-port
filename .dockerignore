@@ -1,0 +1,16 @@
+# Build context root: docker looks for this beside the context, not beside
+# the Dockerfile. Build from the repo root with:
+#   docker build -f deployments/docker/Dockerfile .
+node_modules
+dist
+.git
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.mem-port-data
+.test-model-cache
+test
+deployments
+RELEASE_NOTES.md

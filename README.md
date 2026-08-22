@@ -292,6 +292,19 @@ Three constraints worth knowing before you point this at a cluster. Each is chec
 - **WebSocket only.** SurrealDB's HTTP engine supports neither of those features regardless of server version, so an `http(s)://` URL is rejected.
 - **The user must be root- or namespace-level.** mem-port creates a database per library-id inside its namespace and defines that database's schema on first use, which a database-scoped user cannot do.
 
+### Deploying
+
+Container image, a local Compose stack, and Cloud Run manifests live in
+[`deployments/`](deployments/). Configuration is documented in
+[`.env.example`](.env.example).
+
+Two things change when mem-port stops running on localhost, both covered there:
+a hosted database becomes required (the embedded engine loses data on ephemeral
+filesystems and lets replicas diverge), and the loopback bind that currently
+serves as the security boundary goes away — mem-port has no authentication of
+its own, so something else has to provide one. The supplied manifests default to
+closed for that reason.
+
 ### Using a different database
 
 Storage sits behind a contract in [`src/interfaces/`](src/interfaces/), expressed in domain terms — `store.skills.search(vector, filter)`, `store.entities.detail({ name })` — with no query language, record-id objects or graph syntax in it. SurrealDB is one implementation of that contract, confined entirely to `src/db/surreal/`; nothing under `src/mcp/`, `src/port/` or `src/services/` imports the driver.
