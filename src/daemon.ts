@@ -5,12 +5,22 @@ import { authenticate, authorizeWorkspace, bearerFrom, type AuthFailure } from "
 import { bootstrapAdmin } from "./auth/bootstrap.js";
 import type { ControlPlaneStore } from "./interfaces/admin.interface.js";
 import { isReservedLibraryId } from "./db/libraryId.js";
+import { ADMIN_PREFIX, handleAdminRequest } from "./admin/router.js";
 import { closeRootConnection, getStoreProvider } from "./db/connection.js";
 import type { StoreProvider } from "./interfaces/provider.interface.js";
 import { buildServer, type ServerDeps } from "./mcp/buildServer.js";
 import { LocalEmbeddingProvider } from "./embeddings/localProvider.js";
 
 const MCP_PATH = "/mcp";
+
+/**
+ * A Secure cookie is never sent over plain HTTP, so marking one on a local
+ * daemon would make the panel impossible to sign into. Everywhere else it is
+ * exactly where the cookie would otherwise cross a network in the clear.
+ */
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
 
 export async function startDaemon(overrides: Partial<Config> = {}): Promise<http.Server> {
   const config = resolveConfig(overrides);
@@ -29,7 +39,26 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
   }
 
   const httpServer = http.createServer((req, res) => {
-    if (req.method !== "POST" || req.url !== MCP_PATH) {
+    const path = (req.url ?? "").split("?")[0];
+
+    if (path === ADMIN_PREFIX || path.startsWith(`${ADMIN_PREFIX}/`)) {
+      // The panel exists only where there are accounts to administer. With
+      // auth off there is no control plane, and serving a login screen backed
+      // by nothing would be worse than saying it is not here.
+      if (!controlPlane) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "admin panel is disabled because MEM_PORT_AUTH is off" }));
+        return;
+      }
+      void handleAdminRequest(
+        { cp: controlPlane, auth: config.auth, secureCookies: !isLoopbackHost(config.host) },
+        req,
+        res
+      );
+      return;
+    }
+
+    if (req.method !== "POST" || path !== MCP_PATH) {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
       return;
@@ -46,9 +75,12 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
   // eslint-disable-next-line no-console
   console.error(
     `mem-port listening on http://${config.host}:${config.port}${MCP_PATH} ` +
-      `(store: ${config.store.driver}, data dir: ${config.dataDir})`
+      `(store: ${config.store.driver}, auth: ${config.auth.mode}, data dir: ${config.dataDir})`
   );
-  if (config.host !== "127.0.0.1" && config.host !== "localhost") {
+  if (controlPlane) {
+    console.error(`Admin panel at http://${config.host}:${config.port}${ADMIN_PREFIX}`);
+  }
+  if (!isLoopbackHost(config.host) && config.auth.mode === "off") {
     console.error(
       `WARNING: bound to ${config.host}, which is reachable beyond this machine. ` +
         `mem-port has no authentication of its own — any caller that reaches this port can read and write ` +

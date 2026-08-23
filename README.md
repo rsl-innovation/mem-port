@@ -292,6 +292,35 @@ Three constraints worth knowing before you point this at a cluster. Each is chec
 - **WebSocket only.** SurrealDB's HTTP engine supports neither of those features regardless of server version, so an `http(s)://` URL is rejected.
 - **The user must be root- or namespace-level.** mem-port creates a database per library-id inside its namespace and defines that database's schema on first use, which a database-scoped user cannot do.
 
+### Accounts and the admin panel
+
+By default mem-port has no accounts: it binds loopback, and the operating system
+is the boundary. That is right for a personal daemon and wrong the moment the
+daemon is reachable from anywhere else, so authentication switches on with
+exposure — off on loopback, required on any other interface, and
+`MEM_PORT_AUTH` overrides either way.
+
+With auth on, an admin panel is served at `/admin`. Sign in with the bootstrap
+admin (`MEM_PORT_ADMIN_USER` / `MEM_PORT_ADMIN_PASSWORD`, used only while no
+admin exists) and from there:
+
+- **create workspaces** — a workspace is one isolated knowledge graph, and its
+  name is what clients send as `library-id`
+- **create users**, and issue each an API key (shown once; only a hash is kept)
+  with revocation when a key needs rotating
+- **grant a user access to specific workspaces**
+
+Clients then send two headers, and nothing else changes:
+
+```
+Authorization: Bearer <the user's key>
+library-id: <a workspace they were granted>
+```
+
+Being an admin does not confer data access — admins decide who may reach what,
+which is a different power from reading it, so an admin who wants a workspace
+grants it to themselves.
+
 ### Deploying
 
 Container image, a local Compose stack, and Cloud Run manifests live in

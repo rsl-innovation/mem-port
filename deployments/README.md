@@ -7,15 +7,26 @@
 
 ## Read this first
 
-**mem-port has no authentication.** The `library-id` header selects a tenant; it
-does not prove a right to that tenant. Anything that can reach `POST /mcp` can
-read and write any library by naming it.
+**Authentication follows exposure.** On loopback it is off, because the
+operating system is already the boundary. On any other interface it is
+required, so a deployed daemon is closed by default rather than depending on
+whoever wrote the deploy config.
 
-Locally that is fine, because the daemon binds `127.0.0.1` and the operating
-system is the boundary. A deployment removes that boundary, so something else
-has to provide one. Until app-level auth exists, everything here defaults to
-closed: Compose publishes on loopback only, and the Cloud Run service uses
-internal ingress with invoker auth required.
+That means a deployment needs a bootstrap admin, or it will refuse to start:
+
+```
+MEM_PORT_ADMIN_USER=admin
+MEM_PORT_ADMIN_PASSWORD=<a real secret, from Secret Manager>
+```
+
+Then sign in at `/admin` to create workspaces, add users, issue their API keys
+and grant access. Clients send `Authorization: Bearer <key>` alongside
+`library-id`.
+
+The manifests here still default to closed at the network layer as well —
+Compose publishes on loopback, Cloud Run uses internal ingress with invoker auth
+required — because defence in depth is cheap and an exposed admin panel is worth
+one more lock.
 
 ## The other thing that changes when you deploy
 
