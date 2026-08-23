@@ -3,10 +3,13 @@ import path from "node:path";
 import { Surreal, createRemoteEngines, type SurrealSession } from "surrealdb";
 import { createNodeEngines } from "@surrealdb/node";
 import type { SurrealStoreConfig } from "../../config.js";
+import type { ControlPlaneStore } from "../../interfaces/admin.interface.js";
 import type { StoreProvider } from "../../interfaces/provider.interface.js";
 import type { LibraryStore } from "../../interfaces/store.interface.js";
-import { sanitizeLibraryId } from "../libraryId.js";
+import { SYSTEM_DATABASE, sanitizeLibraryId } from "../libraryId.js";
+import { SurrealControlPlaneStore } from "./controlPlane.js";
 import { ensureSchema } from "./schema.js";
+import { ensureSystemSchema } from "./systemSchema.js";
 import { SurrealLibraryStore } from "./store.js";
 
 /**
@@ -40,6 +43,20 @@ export class SurrealStoreProvider implements StoreProvider {
   }
 
   /**
+   * The control-plane store, in its own database.
+   *
+   * Reached through `#openDatabase` directly rather than `getSession`, because
+   * that path runs every name through `sanitizeLibraryId` — which now refuses
+   * the reserved name outright. Callers cannot get here by asking for a
+   * library; only this method can.
+   */
+  async getControlPlane(): Promise<ControlPlaneStore> {
+    const dbName = `${this.#config.databasePrefix}${SYSTEM_DATABASE}`;
+    const session = await this.#openDatabase(dbName, ensureSystemSchema);
+    return new SurrealControlPlaneStore(session);
+  }
+
+  /**
    * The forked session for a library, migrated on first touch.
    *
    * Exposed beyond `getLibrary` only so tools not yet moved onto the contract
@@ -47,7 +64,13 @@ export class SurrealStoreProvider implements StoreProvider {
    * opening a second, divergent path to the same databases.
    */
   async getSession(rawLibraryId: string): Promise<SurrealSession> {
-    const dbName = this.#databaseName(rawLibraryId);
+    return this.#openDatabase(this.#databaseName(rawLibraryId), ensureSchema);
+  }
+
+  async #openDatabase(
+    dbName: string,
+    migrate: (session: SurrealSession) => Promise<void>
+  ): Promise<SurrealSession> {
     const db = await this.#connect();
 
     let session = this.#sessions.get(dbName);
@@ -63,7 +86,7 @@ export class SurrealStoreProvider implements StoreProvider {
     await this.#evictExcessSessions();
 
     if (!this.#migrated.has(dbName)) {
-      await ensureSchema(session);
+      await migrate(session);
       this.#migrated.add(dbName);
     }
 

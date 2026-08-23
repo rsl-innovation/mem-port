@@ -1,3 +1,4 @@
+import type { ControlPlaneStore } from "./admin.interface.js";
 import type { LibraryStore } from "./store.interface.js";
 
 /**
@@ -16,6 +17,16 @@ export interface StoreProvider {
    * backing storage on first use.
    */
   getLibrary(rawLibraryId: string): Promise<LibraryStore>;
+
+  /**
+   * Storage for mem-port's own account model — users, API keys, workspace
+   * grants — kept apart from every workspace's data.
+   *
+   * It lives on the provider rather than on `LibraryStore` because it is not
+   * knowledge-graph data and should not widen that contract; the provider is
+   * simply what already owns the connection.
+   */
+  getControlPlane(): Promise<ControlPlaneStore>;
 
   /** Release every connection. Safe to call more than once. */
   close(): Promise<void>;
