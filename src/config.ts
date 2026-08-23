@@ -28,6 +28,26 @@ export interface SurrealStoreConfig {
   maxSessions: number;
 }
 
+export type AuthMode = "off" | "required";
+
+export interface AuthConfig {
+  /**
+   * Whether callers must present an API key.
+   *
+   * Defaults to whatever the bind address implies: "off" on loopback, where
+   * the operating system is already the boundary and a personal daemon should
+   * not need credentials, and "required" on any other interface, where there
+   * is no boundary left. Set MEM_PORT_AUTH to override in either direction --
+   * "required" on loopback to develop against the real thing, "off" elsewhere
+   * only when something in front is doing the authenticating.
+   */
+  mode: AuthMode;
+  /** Creates the first admin when the control plane is empty. */
+  bootstrapAdmin?: { username: string; password: string };
+  /** How long an admin panel login stays valid. */
+  sessionTtlHours: number;
+}
+
 export interface Config {
   port: number;
   /**
@@ -42,6 +62,7 @@ export interface Config {
   dataDir: string;
   embeddingModel: string;
   store: SurrealStoreConfig;
+  auth: AuthConfig;
 }
 
 function defaultDataDir(): string {
@@ -158,6 +179,39 @@ function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreCon
   };
 }
 
+function isLoopback(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+function resolveAuthConfig(host: string, overrides?: Partial<AuthConfig>): AuthConfig {
+  const declared = process.env.MEM_PORT_AUTH?.trim().toLowerCase();
+  if (declared !== undefined && declared !== "off" && declared !== "required") {
+    throw new Error(`Invalid MEM_PORT_AUTH "${declared}". Expected "off" or "required".`);
+  }
+
+  const mode: AuthMode = overrides?.mode ?? (declared as AuthMode | undefined) ?? (isLoopback(host) ? "off" : "required");
+
+  const username = process.env.MEM_PORT_ADMIN_USER;
+  const password = process.env.MEM_PORT_ADMIN_PASSWORD;
+  if (password && !username) {
+    throw new Error("MEM_PORT_ADMIN_PASSWORD is set without MEM_PORT_ADMIN_USER.");
+  }
+  if (username && !password) {
+    throw new Error("MEM_PORT_ADMIN_USER is set without MEM_PORT_ADMIN_PASSWORD.");
+  }
+
+  const bootstrapAdmin =
+    overrides?.bootstrapAdmin ?? (username && password ? { username, password } : undefined);
+
+  const ttlRaw = process.env.MEM_PORT_SESSION_TTL_HOURS;
+  const sessionTtlHours = overrides?.sessionTtlHours ?? (ttlRaw ? Number(ttlRaw) : 12);
+  if (!Number.isFinite(sessionTtlHours) || sessionTtlHours <= 0) {
+    throw new Error(`MEM_PORT_SESSION_TTL_HOURS must be a positive number -- got "${ttlRaw}".`);
+  }
+
+  return { mode, bootstrapAdmin, sessionTtlHours };
+}
+
 export function resolveConfig(overrides: Partial<Config> = {}): Config {
   // PORT is the convention every container platform injects (Cloud Run, Heroku,
   // Fly); MEM_PORT_PORT stays ahead of it so an explicit setting still wins.
@@ -172,5 +226,6 @@ export function resolveConfig(overrides: Partial<Config> = {}): Config {
   const embeddingModel =
     overrides.embeddingModel ?? process.env.MEM_PORT_EMBEDDING_MODEL ?? "Xenova/all-MiniLM-L6-v2";
   const store = resolveStoreConfig(dataDir, overrides.store);
-  return { port, host, dataDir, embeddingModel, store };
+  const auth = resolveAuthConfig(host, overrides.auth);
+  return { port, host, dataDir, embeddingModel, store, auth };
 }

@@ -19,6 +19,22 @@ export const SYSTEM_DATABASE = "_memport_system";
 const RESERVED = new Set([SYSTEM_DATABASE]);
 
 /**
+ * Whether a raw header value would land on a reserved database.
+ *
+ * Lets the HTTP layer refuse it with a proper status before a request reaches
+ * a tool, rather than relying on `sanitizeLibraryId` throwing deep inside a
+ * handler where the error surfaces as a 200 with a JSON-RPC error body.
+ */
+export function isReservedLibraryId(raw: string): boolean {
+  try {
+    sanitizeLibraryId(raw);
+    return false;
+  } catch (err) {
+    return err instanceof Error && err.message.includes("reserved");
+  }
+}
+
+/**
  * A `library-id` header value arrives as arbitrary user text. SurrealDB
  * database names are passed through the SDK's structured `use({ database })`
  * call (not interpolated into SurQL), so this isn't an injection concern —

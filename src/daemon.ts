@@ -1,6 +1,10 @@
 import http from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { resolveConfig, type Config } from "./config.js";
+import { authenticate, authorizeWorkspace, bearerFrom, type AuthFailure } from "./auth/authenticate.js";
+import { bootstrapAdmin } from "./auth/bootstrap.js";
+import type { ControlPlaneStore } from "./interfaces/admin.interface.js";
+import { isReservedLibraryId } from "./db/libraryId.js";
 import { closeRootConnection, getStoreProvider } from "./db/connection.js";
 import type { StoreProvider } from "./interfaces/provider.interface.js";
 import { buildServer, type ServerDeps } from "./mcp/buildServer.js";
@@ -16,6 +20,14 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
   const embeddings = new LocalEmbeddingProvider(config.dataDir);
   const deps: ServerDeps = { store, embeddings, dataDir: config.dataDir };
 
+  // Resolved once at startup rather than per request: it also proves the
+  // database is reachable and, when auth is on, that an admin exists to
+  // administer it -- both better discovered now than on the first call.
+  const controlPlane = config.auth.mode === "required" ? await store.getControlPlane() : undefined;
+  if (controlPlane) {
+    await bootstrapAdmin(controlPlane, config.auth);
+  }
+
   const httpServer = http.createServer((req, res) => {
     if (req.method !== "POST" || req.url !== MCP_PATH) {
       res.writeHead(404, { "content-type": "application/json" });
@@ -23,7 +35,7 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
       return;
     }
 
-    void handleMcpRequest(deps, req, res);
+    void handleMcpRequest(deps, config, controlPlane, req, res);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -55,11 +67,67 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
   return httpServer;
 }
 
+/**
+ * Reject a request before any tool runs.
+ *
+ * Authorization happens here rather than inside the tool handlers because a
+ * request carries exactly one library-id header, so the whole request is
+ * already scoped to one workspace. Checking once at the door means no handler
+ * can be added later that forgets to check.
+ */
+async function denyRequest(
+  config: Config,
+  controlPlane: ControlPlaneStore | undefined,
+  req: http.IncomingMessage
+): Promise<AuthFailure | undefined> {
+  const rawLibraryId = req.headers["library-id"];
+  const libraryId = Array.isArray(rawLibraryId) ? rawLibraryId[0] : rawLibraryId;
+
+  // Refused for everyone, authenticated or not, and before anything else:
+  // sanitizeLibraryId would throw on this too, but only once a tool is already
+  // running, which surfaces as a 200 carrying a JSON-RPC error rather than as
+  // the refusal it is.
+  if (libraryId && isReservedLibraryId(libraryId)) {
+    return { reason: "forbidden", status: 403, message: `No access to workspace "${libraryId}"` };
+  }
+
+  // With auth off, a missing or unknown library-id is still handled downstream
+  // as a tool error, which is the long-standing behaviour for a local daemon.
+  if (!controlPlane) return undefined;
+
+  const auth = await authenticate(bearerFrom(req.headers.authorization), controlPlane);
+  if (!auth.ok) return auth.failure;
+
+  if (!libraryId) {
+    return { reason: "forbidden", status: 403, message: 'Missing required "library-id" header' };
+  }
+
+  const allowed = authorizeWorkspace(auth.principal, libraryId);
+  if (!allowed.ok) return allowed.failure;
+
+  // Best effort: a failure to record usage must not fail the request.
+  void controlPlane.touchKeyUsed(auth.principal.keyId).catch(() => undefined);
+  return undefined;
+}
+
 async function handleMcpRequest(
   deps: ServerDeps,
+  config: Config,
+  controlPlane: ControlPlaneStore | undefined,
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
+  const failure = await denyRequest(config, controlPlane, req);
+  if (failure) {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (failure.status === 401) {
+      headers["www-authenticate"] = 'Bearer realm="mem-port"';
+    }
+    res.writeHead(failure.status, headers);
+    res.end(JSON.stringify({ error: failure.message }));
+    return;
+  }
+
   // Stateless mode: a fresh McpServer + transport per request, closing over the
   // library-id-resolved session inside tool handlers. Avoids a class of bugs
   // where a long-lived MCP session receives a different library-id on a later call.
