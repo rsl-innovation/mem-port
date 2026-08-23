@@ -47,7 +47,10 @@ tr:last-child td{border-bottom:0}
 code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(128,128,128,.12);padding:2px 6px;border-radius:5px}
 input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);min-width:200px}
 button{font:inherit;padding:8px 14px;border:0;border-radius:7px;background:var(--accent);color:#fff;cursor:pointer}
-button.link{background:none;color:var(--danger);padding:4px 0;text-decoration:underline}
+/* Destructive actions read as destructive; a plain link action (sign out)
+   must not, or the colour stops meaning anything. */
+button.link{background:none;color:var(--danger);padding:4px 0;text-decoration:underline;cursor:pointer}
+button.link.quiet{color:var(--accent)}
 form.inline{display:inline}
 form.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .flash{border-radius:9px;padding:12px 14px;margin-bottom:18px;border:1px solid}
@@ -75,7 +78,7 @@ ${
 <nav><a href="/admin/workspaces">Workspaces</a><a href="/admin/users">Users</a>
 <span class="muted">${esc(admin.user.username)}</span>
 <form method="post" action="/admin/logout" class="inline">
-<input type="hidden" name="csrf" value="${esc(admin.csrf)}"><button class="link">Sign out</button></form>
+<input type="hidden" name="csrf" value="${esc(admin.csrf)}"><button class="link quiet">Sign out</button></form>
 </nav></div></header>`
     : ""
 }
@@ -251,7 +254,9 @@ ${csrf}<input name="password" type="password" placeholder="Set panel password" a
 <p style="margin-top:16px">
 <form method="post" action="/admin/users/${encodeURIComponent(user.id)}/disable" class="inline">
 ${csrf}<input type="hidden" name="disabled" value="${user.disabled ? "0" : "1"}">
-<button class="link">${user.disabled ? "Re-enable this user" : "Disable this user"}</button></form>
+<button class="link${user.disabled ? " quiet" : ""}">${
+  user.disabled ? "Re-enable this user" : "Disable this user"
+}</button></form>
 </p>
 <p><form method="post" action="/admin/users/${encodeURIComponent(user.id)}/delete" class="inline"
 onsubmit="return confirm('Delete ${esc(user.username)}? Their keys and grants are removed. This cannot be undone.')">
