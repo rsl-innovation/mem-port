@@ -1,6 +1,6 @@
 {
   "name": "@rsl-innovation/mem-port",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A portable, long-term agentic memory MCP server — a thumb drive for your AI context.",
   "type": "module",
   "license": "MIT",
