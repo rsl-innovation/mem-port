@@ -1,6 +1,7 @@
 import type http from "node:http";
 import type { AuthConfig } from "../config.js";
 import type { ControlPlaneStore } from "../interfaces/admin.interface.js";
+import type { StoreProvider } from "../interfaces/provider.interface.js";
 import { hashPassword, issueKey, verifyPassword } from "../auth/secrets.js";
 import { isReservedLibraryId } from "../db/libraryId.js";
 import {
@@ -12,13 +13,19 @@ import {
   type AdminContext,
 } from "./session.js";
 import { errorPage, loginPage, userPage, usersPage, workspacesPage } from "./views.js";
+import { docsPage } from "./docs.js";
+import { explorePage, exploreDeniedPage, readSnapshot } from "./explore.js";
 
 export const ADMIN_PREFIX = "/admin";
 
 interface Ctx {
   cp: ControlPlaneStore;
+  /** Opens a workspace's own store, for the read-only explore view. */
+  store: StoreProvider;
   auth: AuthConfig;
   secureCookies: boolean;
+  /** Public origin, so docs can show a URL a client can actually use. */
+  origin: string;
 }
 
 function html(res: http.ServerResponse, status: number, body: string): void {
@@ -114,6 +121,28 @@ async function route(
   if (path === `${ADMIN_PREFIX}/logout` && method === "POST") {
     await endSession(cp, req, res);
     return redirect(res, `${ADMIN_PREFIX}/login`);
+  }
+
+  if (path === `${ADMIN_PREFIX}/docs` && method === "GET") {
+    return html(res, 200, docsPage(admin, originOf(req, ctx.origin)));
+  }
+
+  // --- explore -----------------------------------------------------------
+
+  const exploreMatch = /^\/admin\/workspaces\/([^/]+)\/explore$/.exec(path);
+  if (exploreMatch && method === "GET") {
+    const slug = decodeURIComponent(exploreMatch[1]);
+
+    // Reading a workspace needs a grant, exactly as it would for an API key.
+    // An admin who wants to browse grants it to themselves -- see
+    // exploreDeniedPage for why that is the rule rather than an inconvenience.
+    const granted = await cp.listWorkspacesForUser(admin.user.id);
+    if (!granted.includes(slug)) {
+      return html(res, 403, exploreDeniedPage(admin, slug, admin.csrf, admin.user.id));
+    }
+
+    const store = await ctx.store.getLibrary(slug);
+    return html(res, 200, explorePage(admin, slug, await readSnapshot(store)));
   }
 
   // --- workspaces --------------------------------------------------------
@@ -216,6 +245,14 @@ async function route(
         case "/grants": {
           const workspace = (form.get("workspace") ?? "").trim();
           if (workspace) await cp.grantWorkspace(userId, workspace);
+
+          // The explore view sends the admin here to grant themselves access;
+          // returning them to the page they wanted saves a confusing detour
+          // through a user detail screen they did not ask for.
+          const returnTo = form.get("return_to");
+          if (returnTo && returnTo.startsWith(`${ADMIN_PREFIX}/`)) {
+            return redirect(res, returnTo);
+          }
           return render({ flash: { kind: "ok", message: `Granted access to "${workspace}".` } });
         }
         case "/grants/revoke": {
@@ -259,6 +296,21 @@ async function validateWorkspaceSlug(cp: ControlPlaneStore, slug: string): Promi
   if (isReservedLibraryId(slug)) return `"${slug}" is reserved by mem-port`;
   if (await cp.getWorkspaceBySlug(slug)) return `"${slug}" already exists`;
   return undefined;
+}
+
+/**
+ * The origin a client should be pointed at.
+ *
+ * Prefers the configured value, then the Host header, so the docs show the URL
+ * the admin actually reached the panel on rather than a loopback address that
+ * would be useless to anyone else.
+ */
+function originOf(req: http.IncomingMessage, configured: string): string {
+  if (configured) return configured;
+  const host = req.headers.host;
+  if (!host) return "http://127.0.0.1:8787";
+  const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0] ?? "http";
+  return `${proto}://${host}`;
 }
 
 function flashFrom(url: URL): { kind: "ok" | "err"; message: string } | undefined {

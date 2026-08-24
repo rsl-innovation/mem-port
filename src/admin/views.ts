@@ -1,4 +1,5 @@
 import type { ApiKey, User, Workspace } from "../interfaces/admin.interface.js";
+import { THEME_CSS } from "./theme.js";
 
 /**
  * Server-rendered HTML for the admin panel.
@@ -25,58 +26,21 @@ export function esc(value: unknown): string {
     .replaceAll("'", "&#39;");
 }
 
-const STYLES = `
-:root{--bg:#fbfbfd;--fg:#1a1a1f;--muted:#6b6b76;--line:#e3e3e9;--card:#fff;--accent:#3b5bdb;--danger:#c92a2a;--ok:#2b8a3e}
-@media (prefers-color-scheme:dark){:root{--bg:#141418;--fg:#ececf0;--muted:#9a9aa6;--line:#2b2b33;--card:#1c1c22;--accent:#748ffc;--danger:#ff8787;--ok:#69db7c}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-a{color:var(--accent)}
-header{border-bottom:1px solid var(--line);background:var(--card)}
-header .inner,main{max-width:900px;margin:0 auto;padding:16px 20px}
-header .inner{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
-header strong{font-size:16px}
-header nav{display:flex;gap:16px;margin-left:auto;align-items:center}
-h1{font-size:21px;margin:0 0 4px}
-h2{font-size:16px;margin:28px 0 10px}
-.sub{color:var(--muted);margin:0 0 20px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:20px}
-table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-tr:last-child td{border-bottom:0}
-code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(128,128,128,.12);padding:2px 6px;border-radius:5px}
-input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);min-width:200px}
-button{font:inherit;padding:8px 14px;border:0;border-radius:7px;background:var(--accent);color:#fff;cursor:pointer}
-/* Destructive actions read as destructive; a plain link action (sign out)
-   must not, or the colour stops meaning anything. */
-button.link{background:none;color:var(--danger);padding:4px 0;text-decoration:underline;cursor:pointer}
-button.link.quiet{color:var(--accent)}
-form.inline{display:inline}
-form.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.flash{border-radius:9px;padding:12px 14px;margin-bottom:18px;border:1px solid}
-.flash.err{border-color:var(--danger);color:var(--danger)}
-.flash.ok{border-color:var(--ok);color:var(--ok)}
-.reveal{border:1px solid var(--ok);border-radius:9px;padding:14px;margin-bottom:20px}
-.reveal code{display:block;padding:11px;margin:9px 0 0;word-break:break-all;font-size:14px}
-.muted{color:var(--muted)}
-.pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-.empty{color:var(--muted);padding:14px 0}
-`;
-
 export interface AdminView {
   user: { username: string };
   csrf: string;
 }
 
-function layout(title: string, body: string, admin?: AdminView): string {
+export function layout(title: string, body: string, admin?: AdminView): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)} — mem-port admin</title><style>${STYLES}</style></head><body>
+<meta name="robots" content="noindex,nofollow">
+<title>${esc(title)} — mem-port</title><style>${THEME_CSS}</style></head><body>
 ${
   admin
-    ? `<header><div class="inner"><strong>mem-port</strong>
-<nav><a href="/admin/workspaces">Workspaces</a><a href="/admin/users">Users</a>
-<span class="muted">${esc(admin.user.username)}</span>
+    ? `<header><div class="wrap"><a class="brand" href="/admin/workspaces">mem<span>-</span>port</a>
+<nav><a href="/admin/workspaces">Workspaces</a><a href="/admin/users">Users</a><a href="/admin/docs">Docs</a>
+<span class="who">${esc(admin.user.username)}</span>
 <form method="post" action="/admin/logout" class="inline">
 <input type="hidden" name="csrf" value="${esc(admin.csrf)}"><button class="link quiet">Sign out</button></form>
 </nav></div></header>`
@@ -88,12 +52,17 @@ ${
 export function loginPage(error?: string): string {
   return layout(
     "Sign in",
-    `<h1>mem-port admin</h1><p class="sub">Sign in to manage workspaces, users and keys.</p>
-${error ? `<div class="flash err">${esc(error)}</div>` : ""}
-<div class="card"><form method="post" action="/admin/login">
-<p><label>Username<br><input name="username" autocomplete="username" autofocus required></label></p>
-<p><label>Password<br><input name="password" type="password" autocomplete="current-password" required></label></p>
-<button>Sign in</button></form></div>`
+    `<div style="max-width:26rem;margin:clamp(2rem,10vh,6rem) auto 0">
+<p class="eyebrow">mem-port</p>
+<h1>Sign <em>in</em></h1>
+<p class="sub">Manage workspaces, users and access keys.</p>
+${error ? `<div class="note bad">${esc(error)}</div>` : ""}
+<div class="panel"><form method="post" action="/admin/login">
+<div style="margin-bottom:1rem"><label for="u">Username</label>
+<input id="u" name="username" autocomplete="username" autofocus required style="width:100%"></div>
+<div style="margin-bottom:1.35rem"><label for="p">Password</label>
+<input id="p" name="password" type="password" autocomplete="current-password" required style="width:100%"></div>
+<button style="width:100%">Sign in</button></form></div></div>`
   );
 }
 
@@ -104,8 +73,10 @@ export function workspacesPage(
 ): string {
   const rows = workspaces
     .map(
-      (w) => `<tr><td><code>${esc(w.slug)}</code></td><td>${esc(w.description ?? "")}</td>
+      (w) => `<tr><td><span class="dot"></span><code>${esc(w.slug)}</code></td>
+<td>${esc(w.description ?? "")}</td>
 <td class="muted">${esc(w.createdAt.slice(0, 10))}</td>
+<td><a href="/admin/workspaces/${encodeURIComponent(w.slug)}/explore">Explore</a></td>
 <td><form method="post" action="/admin/workspaces/delete" class="inline"
 onsubmit="return confirm('Delete workspace ${esc(w.slug)}? Access grants are removed. Stored memories are NOT deleted.')">
 <input type="hidden" name="csrf" value="${esc(admin.csrf)}"><input type="hidden" name="id" value="${esc(w.id)}">
@@ -115,18 +86,21 @@ onsubmit="return confirm('Delete workspace ${esc(w.slug)}? Access grants are rem
 
   return layout(
     "Workspaces",
-    `<h1>Workspaces</h1>
-<p class="sub">A workspace is one isolated knowledge graph. Its name is what clients send as the <code>library-id</code> header.</p>
-${flash ? `<div class="flash ${flash.kind}">${esc(flash.message)}</div>` : ""}
-<div class="card"><form method="post" action="/admin/workspaces" class="row">
+    `<p class="eyebrow">Access control</p><h1>Work<em>spaces</em></h1>
+<p class="sub">A workspace is one isolated knowledge graph. Its name is what clients send as the
+<code>library-id</code> header, and nothing in one workspace can see anything in another.</p>
+${flash ? `<div class="note${flash.kind === "err" ? " bad" : ""}">${esc(flash.message)}</div>` : ""}
+<div class="panel"><form method="post" action="/admin/workspaces" class="row">
 <input type="hidden" name="csrf" value="${esc(admin.csrf)}">
-<input name="slug" placeholder="acme-engineering" required pattern="[A-Za-z0-9_-]+"
- title="Letters, digits, hyphens and underscores">
-<input name="description" placeholder="Description (optional)">
+<div><label for="slug">Workspace name</label>
+<input id="slug" name="slug" placeholder="acme-engineering" required pattern="[A-Za-z0-9_-]+"
+ title="Letters, digits, hyphens and underscores"></div>
+<div><label for="desc">Description</label>
+<input id="desc" name="description" placeholder="Optional"></div>
 <button>Create workspace</button></form></div>
-<div class="card">${
+<div class="panel">${
       rows
-        ? `<table><tr><th>Workspace</th><th>Description</th><th>Created</th><th></th></tr>${rows}</table>`
+        ? `<table><tr><th>Workspace</th><th>Description</th><th>Created</th><th>Graph</th><th></th></tr>${rows}</table>`
         : `<p class="empty">No workspaces yet.</p>`
     }</div>`,
     admin
@@ -148,16 +122,20 @@ export function usersPage(
 
   return layout(
     "Users",
-    `<h1>Users</h1>
-<p class="sub">A user holds API keys and is granted access to workspaces.</p>
-${flash ? `<div class="flash ${flash.kind}">${esc(flash.message)}</div>` : ""}
-<div class="card"><form method="post" action="/admin/users" class="row">
+    `<p class="eyebrow">Access control</p><h1>Us<em>ers</em></h1>
+<p class="sub">A user holds API keys and is granted access to specific workspaces. A key can only
+open the workspaces its user was granted.</p>
+${flash ? `<div class="note${flash.kind === "err" ? " bad" : ""}">${esc(flash.message)}</div>` : ""}
+<div class="panel"><form method="post" action="/admin/users" class="row">
 <input type="hidden" name="csrf" value="${esc(admin.csrf)}">
-<input name="username" placeholder="alice" required>
-<label class="muted"><input type="checkbox" name="is_admin" value="1" style="min-width:auto"> admin</label>
-<input name="password" type="password" placeholder="Panel password (admins only)" autocomplete="new-password">
+<div><label for="un">Username</label><input id="un" name="username" placeholder="alice" required></div>
+<div><label for="pw">Panel password</label>
+<input id="pw" name="password" type="password" placeholder="Admins only" autocomplete="new-password"></div>
+<div><label for="ia">Admin</label>
+<span style="display:flex;align-items:center;height:41px"><input id="ia" type="checkbox" name="is_admin" value="1"
+ style="min-width:auto;width:18px;height:18px;accent-color:#f2a24c"></span></div>
 <button>Create user</button></form></div>
-<div class="card">${
+<div class="panel">${
       rows ? `<table><tr><th>User</th><th></th><th>Created</th></tr>${rows}</table>` : `<p class="empty">No users yet.</p>`
     }</div>`,
     admin
@@ -207,7 +185,7 @@ ${csrf}<input type="hidden" name="workspace" value="${esc(slug)}"><button class=
       user.disabled ? '<span class="pill">disabled</span>' : ""
     }</h1>
 <p class="sub">Created ${esc(user.createdAt.slice(0, 10))}</p>
-${opts.flash ? `<div class="flash ${opts.flash.kind}">${esc(opts.flash.message)}</div>` : ""}
+${opts.flash ? `<div class="note${opts.flash.kind === "err" ? " bad" : ""}">${esc(opts.flash.message)}</div>` : ""}
 ${
   opts.revealedKey
     ? `<div class="reveal"><strong>New API key — copy it now.</strong>
@@ -218,7 +196,7 @@ displayed again; if it is lost, revoke it and issue another.</p>
 }
 
 <h2>API keys</h2>
-<div class="card">
+<div class="panel">
 <form method="post" action="/admin/users/${encodeURIComponent(user.id)}/keys" class="row">
 ${csrf}<input name="label" placeholder="Laptop, CI, ...">
 <button>Issue new key</button></form>
@@ -230,7 +208,7 @@ ${
 </div>
 
 <h2>Workspace access</h2>
-<div class="card">
+<div class="panel">
 ${
   options
     ? `<form method="post" action="/admin/users/${encodeURIComponent(user.id)}/grants" class="row">
@@ -247,7 +225,7 @@ ${
 </div>
 
 <h2>Account</h2>
-<div class="card">
+<div class="panel">
 <form method="post" action="/admin/users/${encodeURIComponent(user.id)}/password" class="row">
 ${csrf}<input name="password" type="password" placeholder="Set panel password" autocomplete="new-password" required>
 <button>Update password</button></form>
@@ -264,7 +242,7 @@ ${csrf}<button class="link">Delete user</button></form></p>
 </div>
 
 <h2>Client setup</h2>
-<div class="card"><p class="muted">Point an MCP client at this daemon with the user's key and one workspace:</p>
+<div class="panel"><p class="muted">Point an MCP client at this daemon with the user's key and one workspace:</p>
 <code>Authorization: Bearer &lt;the key above&gt;<br>library-id: &lt;workspace&gt;</code></div>`,
     admin
   );

@@ -44,6 +44,26 @@ describe("tenancy isolation", () => {
     expect(freshContent).toHaveLength(0);
   }, 60_000);
 
+  /**
+   * Two clients reaching the same brand-new library at the same instant used to
+   * make both run the schema migration concurrently, and concurrent DDL on one
+   * database fails with "Transaction write conflict". The guard was a boolean
+   * set consulted before an await, so both callers saw it unset.
+   */
+  it("survives concurrent first contact with a brand-new library", async () => {
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        callTool(PORT, "race-lib", "save_memory", { content: `concurrent write ${i}` })
+      )
+    );
+    expect(results).toHaveLength(5);
+
+    const listed = JSON.parse(
+      (await callTool(PORT, "race-lib", "search_memory", { query: "concurrent write" })).content[0]?.text ?? "[]"
+    ) as unknown[];
+    expect(listed, "every concurrent write should have landed").toHaveLength(5);
+  }, 60_000);
+
   it("rejects requests with no library-id header", async () => {
     const res = await fetch(`http://127.0.0.1:${PORT}/mcp`, {
       method: "POST",

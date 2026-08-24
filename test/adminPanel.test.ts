@@ -226,6 +226,88 @@ describe("managing workspaces and users", () => {
     expect(stillIn.status).toBe(200); // the root session is unaffected
   });
 
+  it("serves docs with a usable client URL", async () => {
+    const page = await get("/admin/docs");
+    expect(page.status).toBe(200);
+    // The docs must show the origin the admin actually reached, not a
+    // hard-coded default that would be useless to hand to anyone.
+    expect(page.body).toContain(`http://127.0.0.1:${PORT}/mcp`);
+    expect(page.body).toContain("shown once");
+  });
+
+  it("requires a grant before an admin can explore a workspace", async () => {
+    // Administering a workspace and reading it are separate powers; this is the
+    // page that has to hold that line, since it renders workspace contents.
+    const denied = await get("/admin/workspaces/acme-eng/explore");
+    expect(denied.status).toBe(403);
+    expect(denied.body).toMatch(/not been granted/i);
+  });
+
+  it("explores a workspace once granted, and reports it empty when it is", async () => {
+    const root = await cp.getUserByUsername("root");
+    const page = await get(`/admin/users/${encodeURIComponent(root!.id)}`);
+    await post(`/admin/users/${encodeURIComponent(root!.id)}/grants`, {
+      csrf: csrfFrom(page.body),
+      workspace: "acme-eng",
+    });
+
+    const explore = await get("/admin/workspaces/acme-eng/explore");
+    expect(explore.status).toBe(200);
+    expect(explore.body).toMatch(/empty/i);
+  }, 60_000);
+
+  it("renders the graph once a workspace has content", async () => {
+    const root = await cp.getUserByUsername("root");
+    const page = await get(`/admin/users/${encodeURIComponent(root!.id)}`);
+    const issued = await post(`/admin/users/${encodeURIComponent(root!.id)}/keys`, {
+      csrf: csrfFrom(page.body),
+      label: "explore probe",
+    });
+    const key = /<code>(mp_[A-Za-z0-9_-]+)<\/code>/.exec(issued.body)?.[1];
+
+    /**
+     * The body has to be drained, not just awaited.
+     *
+     * The MCP endpoint answers as text/event-stream, so `await fetch(...)`
+     * resolves as soon as the response headers arrive — while the tool is still
+     * running. Reading the body is what actually waits for the write to land;
+     * without it the explore page below reads the workspace before anything is
+     * in it.
+     */
+    const save = async (tool: string, args: unknown) => {
+      const res = await fetch(`${BASE}/mcp`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${key}`,
+          "library-id": "acme-eng",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }),
+      });
+      await res.text();
+      return res;
+    };
+
+    await save("save_memory", { content: "Checkout runs on the main branch only", entity_refs: ["checkout-service"] });
+    await save("save_skill", {
+      name: "rotate-key",
+      description: "Use when a key leaks",
+      content: "Issue a new key, migrate, revoke the old one.",
+      entity_refs: ["checkout-service", "vault"],
+    });
+    await save("relate_entities", { from_entity: "checkout-service", to_entity: "vault", relation_type: "depends_on" });
+
+    const explore = await get("/admin/workspaces/acme-eng/explore");
+    expect(explore.status).toBe(200);
+    expect(explore.body).not.toMatch(/This workspace is empty/i);
+    // An SVG with both entities and the relation between them.
+    expect(explore.body).toContain("<svg");
+    expect(explore.body).toContain("checkout-service");
+    expect(explore.body).toContain("depends_on");
+    expect(explore.body).toContain("rotate-key");
+  }, 90_000);
+
   it("signs out", async () => {
     const page = await get("/admin/workspaces");
     await post("/admin/logout", { csrf: csrfFrom(page.body) });

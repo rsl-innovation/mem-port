@@ -31,7 +31,18 @@ export class SurrealStoreProvider implements StoreProvider {
   #connecting: Promise<Surreal> | undefined;
   /** Insertion-ordered, oldest first — a Map is all an LRU needs here. */
   readonly #sessions = new Map<string, SurrealSession>();
-  readonly #migrated = new Set<string>();
+  /**
+   * In-flight and completed opens, keyed by database name.
+   *
+   * A promise rather than a "have I migrated this?" boolean set, because the
+   * boolean form is a race: two callers reaching a not-yet-migrated database at
+   * the same instant both find the flag unset and both run the schema
+   * migration, and concurrent DDL on one database fails with a write conflict.
+   * Memoizing the whole open means the second caller awaits the first's work
+   * instead of repeating it — and gets the same session, rather than forking a
+   * second one that immediately replaces the first in the cache.
+   */
+  readonly #opening = new Map<string, Promise<SurrealSession>>();
 
   constructor(config: SurrealStoreConfig) {
     this.#config = config;
@@ -71,25 +82,40 @@ export class SurrealStoreProvider implements StoreProvider {
     dbName: string,
     migrate: (session: SurrealSession) => Promise<void>
   ): Promise<SurrealSession> {
-    const db = await this.#connect();
-
-    let session = this.#sessions.get(dbName);
-    if (session) {
+    const cached = this.#sessions.get(dbName);
+    if (cached) {
       // Refresh recency: delete then re-set moves it to the end of the Map's
-      // insertion order, which is what makes eviction below least-recently-used.
+      // insertion order, which is what makes eviction least-recently-used.
       this.#sessions.delete(dbName);
-    } else {
-      session = await db.forkSession();
-      await session.use({ database: dbName });
+      this.#sessions.set(dbName, cached);
+      return cached;
     }
+
+    let opening = this.#opening.get(dbName);
+    if (!opening) {
+      opening = this.#forkAndMigrate(dbName, migrate);
+      this.#opening.set(dbName, opening);
+      // Cleared on failure only: a successful open leaves the session in
+      // #sessions, and holding a rejected promise would make one transient
+      // failure permanent for the life of the process.
+      opening.catch(() => this.#opening.delete(dbName));
+    }
+
+    const session = await opening;
+    this.#opening.delete(dbName);
     this.#sessions.set(dbName, session);
     await this.#evictExcessSessions();
+    return session;
+  }
 
-    if (!this.#migrated.has(dbName)) {
-      await migrate(session);
-      this.#migrated.add(dbName);
-    }
-
+  async #forkAndMigrate(
+    dbName: string,
+    migrate: (session: SurrealSession) => Promise<void>
+  ): Promise<SurrealSession> {
+    const db = await this.#connect();
+    const session = await db.forkSession();
+    await session.use({ database: dbName });
+    await migrate(session);
     return session;
   }
 
@@ -103,7 +129,7 @@ export class SurrealStoreProvider implements StoreProvider {
       await session.closeSession().catch(() => undefined);
     }
     this.#sessions.clear();
-    this.#migrated.clear();
+    this.#opening.clear();
     if (this.#db) {
       await this.#db.close();
       this.#db = undefined;
@@ -122,8 +148,10 @@ export class SurrealStoreProvider implements StoreProvider {
       const session = this.#sessions.get(oldest.value);
       this.#sessions.delete(oldest.value);
       await session?.closeSession().catch(() => undefined);
-      // `#migrated` deliberately keeps the entry: the schema is still applied
-      // on the server, and re-running it would be wasted round trips.
+      // An evicted database is simply re-opened on next use. `ensureSchema` is
+      // idempotent, so re-running it then is correct if wasteful, and tracking
+      // "already migrated" separately from the session is what created the race
+      // this design removes.
     }
   }
 

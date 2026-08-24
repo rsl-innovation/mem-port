@@ -51,7 +51,13 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
         return;
       }
       void handleAdminRequest(
-        { cp: controlPlane, auth: config.auth, secureCookies: !isLoopbackHost(config.host) },
+        {
+          cp: controlPlane,
+          store,
+          auth: config.auth,
+          secureCookies: !isLoopbackHost(config.host),
+          origin: process.env.MEM_PORT_PUBLIC_URL ?? "",
+        },
         req,
         res
       );

@@ -309,6 +309,13 @@ admin exists) and from there:
 - **create users**, and issue each an API key (shown once; only a hash is kept)
   with revocation when a key needs rotating
 - **grant a user access to specific workspaces**
+- **explore a workspace's graph** — a read-only view of what a workspace holds
+  and how its entities connect, which is the quickest way to check whether a
+  newly connected client is actually writing anything
+
+The panel also serves its own documentation at `/admin/docs`, covering both the
+portal and the product, with copy-pasteable client configuration for the URL the
+admin actually reached it on.
 
 Clients then send two headers, and nothing else changes:
 
