@@ -1,0 +1,62 @@
+# mem-port backed by Postgres, as an alternative to the SurrealDB stack in
+# docker-compose.yml.
+#
+#   docker compose -f deployments/docker/docker-compose.postgres.yml up --build
+#
+# Either engine works; nothing above mem-port's storage contract can tell them
+# apart, which is asserted by test/crossDriver.test.ts. Pick Postgres when you
+# already operate Postgres, want a managed service (Cloud SQL, RDS, Neon,
+# Supabase), or need the backup and replication tooling you already know.
+
+name: mem-port-postgres
+
+services:
+  postgres:
+    # pgvector is REQUIRED: every search mem-port offers is a cosine similarity
+    # over an embedding. This image bundles the extension; a stock postgres
+    # image does not, and mem-port refuses to start without it rather than
+    # failing on the first search.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-memport}
+      POSTGRES_DB: memport
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      # Exposed for inspection from the host. Drop this in a real deployment —
+      # only mem-port needs to reach the database.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d memport"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  mem-port:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MEM_PORT_HOST: 0.0.0.0
+      MEM_PORT_PORT: 8787
+      # A postgres:// URL selects the Postgres driver. Each workspace gets its
+      # own schema, so isolation is structural rather than a WHERE clause.
+      MEM_PORT_DB_URL: postgres://postgres:${POSTGRES_PASSWORD:-memport}@postgres:5432/memport
+      MEM_PORT_DB_POOL_SIZE: 10
+      # Binding 0.0.0.0 makes authentication required, so a deployment needs a
+      # first admin or the daemon refuses to start. Deliberately has no default:
+      # a shipped default password is exactly the kind of thing that survives
+      # into production. Set it in a .env beside this file, or export it.
+      MEM_PORT_ADMIN_USER: ${MEM_PORT_ADMIN_USER:-admin}
+      MEM_PORT_ADMIN_PASSWORD: ${MEM_PORT_ADMIN_PASSWORD:?set MEM_PORT_ADMIN_PASSWORD before starting (see deployments/README.md)}
+    ports:
+      # Loopback only. Do not publish beyond the host until authentication is
+      # configured — see ../README.md.
+      - "127.0.0.1:${MEM_PORT_HOST_PORT:-8787}:8787"
+
+volumes:
+  pg-data:

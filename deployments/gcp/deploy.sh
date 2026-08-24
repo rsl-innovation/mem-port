@@ -44,20 +44,22 @@ else
   gcloud builds submit --tag "$IMAGE" --project="$PROJECT_ID" .
 fi
 
-echo "==> Checking the database password secret"
-if ! gcloud secrets describe mem-port-db-pass --project="$PROJECT_ID" >/dev/null 2>&1; then
+echo "==> Checking required secrets"
+for SECRET in mem-port-db-pass mem-port-admin-pass; do
+  gcloud secrets describe "$SECRET" --project="$PROJECT_ID" >/dev/null 2>&1 || MISSING="${MISSING:-}$SECRET "
+done
+if [ -n "${MISSING:-}" ]; then
+  echo "    Missing secret(s): $MISSING" >&2
   cat >&2 <<'MSG'
 
-    Secret "mem-port-db-pass" does not exist. Create it before deploying:
+    mem-port needs two secrets: the database password, and the bootstrap admin
+    password (without which the service will not start, because binding
+    0.0.0.0 makes authentication required).
 
-      printf 'your-surrealdb-password' | \
-        gcloud secrets create mem-port-db-pass --data-file=-
+      printf 'your-database-password' | gcloud secrets create mem-port-db-pass --data-file=-
+      printf 'your-admin-password'    | gcloud secrets create mem-port-admin-pass --data-file=-
 
-    and grant the service account access:
-
-      gcloud secrets add-iam-policy-binding mem-port-db-pass \
-        --member="serviceAccount:$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')-compute@developer.gserviceaccount.com" \
-        --role=roles/secretmanager.secretAccessor
+    Then grant the service account access to each — see deployments/gcp/README.md.
 
 MSG
   exit 1
