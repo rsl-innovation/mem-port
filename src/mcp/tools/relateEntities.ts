@@ -1,10 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { resolveEntityRefs } from "../../db/entities.js";
+import type { ServerDeps } from "../buildServer.js";
 
-export function registerRelateEntities(server: McpServer, root: Surreal): void {
+export function registerRelateEntities(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "relate_entities",
     {
@@ -25,17 +24,17 @@ export function registerRelateEntities(server: McpServer, root: Surreal): void {
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      const [fromId, toId] = await resolveEntityRefs(session, [args.from_entity, args.to_entity]);
+      const [fromId, toId] = await store.entities.resolveRefs([args.from_entity, args.to_entity]);
 
-      const [created] = await session.query<[Array<{ id: unknown }>]>(
-        `RELATE $from->relates_to->$to CONTENT { relation_type: $relation_type, attributes: $attributes }`,
-        { from: fromId, to: toId, relation_type: args.relation_type, attributes: args.attributes ?? {} }
-      );
+      const id = await store.graph.relate(fromId, toId, {
+        relation_type: args.relation_type,
+        attributes: args.attributes,
+      });
 
       return {
-        content: [{ type: "text" as const, text: `Created relation ${String(created[0].id)}` }],
+        content: [{ type: "text" as const, text: `Created relation ${id}` }],
       };
     }
   );

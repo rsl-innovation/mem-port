@@ -1,39 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { formatAdrNumber } from "../../db/adr.js";
+import type { ServerDeps } from "../buildServer.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
-import { captionOf, detailResult, formatTags, formatWhen } from "../view.js";
+import { captionOf, detailResult, formatAdrNumber, formatTags, formatWhen } from "../view.js";
 
-interface AdrRow {
-  id: unknown;
-  number: number;
-  title: string;
-  context: string;
-  decision: string;
-  consequences: string | null;
-  alternatives: string | null;
-  status: string;
-  supersedes: unknown | null;
-  tags: string[];
-  source: string;
-  archived: boolean;
-  decided_at: unknown;
-  created_at: unknown;
-  updated_at: unknown;
-  mentioned_entities: Array<{ id: unknown; name: string }>;
-}
-
-interface AdrLinkRow {
-  id: unknown;
-  number: number;
-  title: string;
-  status?: string;
-}
-
-export function registerGetAdr(server: McpServer, root: Surreal): void {
+export function registerGetAdr(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "get_adr",
@@ -57,16 +30,9 @@ export function registerGetAdr(server: McpServer, root: Surreal): void {
         };
       }
 
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      const target = args.id ? `[<record<adr>> $id]` : `(SELECT VALUE id FROM adr WHERE number = $number LIMIT 1)`;
-
-      const [rows] = await session.query<[AdrRow[]]>(
-        `SELECT *, ->mentions->entity.{id, name} AS mentioned_entities FROM ${target}`,
-        args.id ? { id: new StringRecordId(args.id) } : { number: args.number }
-      );
-
-      const adr = rows[0];
+      const adr = await store.adrs.getDetail(args.id ? { id: args.id } : { number: args.number! });
       if (!adr) {
         return {
           content: [{ type: "text" as const, text: "ADR not found" }],
@@ -74,21 +40,8 @@ export function registerGetAdr(server: McpServer, root: Surreal): void {
         };
       }
 
-      let supersedes: AdrLinkRow | null = null;
-      if (adr.supersedes) {
-        const [linked] = await session.query<[AdrLinkRow[]]>(`SELECT id, number, title, status FROM $id`, {
-          id: adr.supersedes,
-        });
-        supersedes = linked[0] ?? null;
-      }
-
-      const [supersededBy] = await session.query<[AdrLinkRow[]]>(
-        `SELECT id, number, title FROM adr WHERE supersedes = $id`,
-        { id: adr.id }
-      );
-
       const result = {
-        id: String(adr.id),
+        id: adr.id,
         number: adr.number,
         adr: formatAdrNumber(adr.number),
         title: adr.title,
@@ -103,16 +56,21 @@ export function registerGetAdr(server: McpServer, root: Surreal): void {
         decided_at: adr.decided_at,
         created_at: adr.created_at,
         updated_at: adr.updated_at,
-        supersedes: supersedes
-          ? { id: String(supersedes.id), number: supersedes.number, adr: formatAdrNumber(supersedes.number), title: supersedes.title }
+        supersedes: adr.supersedes
+          ? {
+              id: adr.supersedes.id,
+              number: adr.supersedes.number,
+              adr: formatAdrNumber(adr.supersedes.number),
+              title: adr.supersedes.title,
+            }
           : null,
-        superseded_by: supersededBy.map((row) => ({
-          id: String(row.id),
+        superseded_by: adr.superseded_by.map((row) => ({
+          id: row.id,
           number: row.number,
           adr: formatAdrNumber(row.number),
           title: row.title,
         })),
-        mentioned_entities: adr.mentioned_entities.map((e) => ({ id: String(e.id), name: e.name })),
+        mentioned_entities: adr.mentioned_entities,
       };
 
       return detailResult(extra, result, {

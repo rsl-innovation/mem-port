@@ -1,0 +1,525 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden output > export_library 1`] = `
+"--- text ---
+Exported 3 entities, 1 episodes, 2 memories, 1 skills, 2 ADRs to <dataDir>/exports/golden-lib-<epoch>.memport.json
+--- _meta ---
+undefined
+"
+`;
+
+exports[`golden output > get_adr with consequences and alternatives absent 1`] = `
+"--- text ---
+{
+  "id": "adr:<id>",
+  "number": 2,
+  "adr": "ADR-0002",
+  "title": "Keep embeddings local",
+  "context": "Sending record text to a hosted embedding API would leak private notes.",
+  "decision": "Run all-MiniLM-L6-v2 locally via ONNX.",
+  "status": "proposed",
+  "tags": [],
+  "source": "manual",
+  "archived": false,
+  "decided_at": "<timestamp>",
+  "created_at": "<timestamp>",
+  "updated_at": "<timestamp>",
+  "supersedes": null,
+  "superseded_by": [],
+  "mentioned_entities": []
+}
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "detail",
+    "tool": "get_adr",
+    "key": "2",
+    "title": "ADR-0002 — Keep embeddings local",
+    "subtitle": "proposed · <date>",
+    "sections": [
+      {
+        "label": "Context",
+        "value": "Sending record text to a hosted embedding API would leak private notes."
+      },
+      {
+        "label": "Decision",
+        "value": "Run all-MiniLM-L6-v2 locally via ONNX."
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > get_adr with every optional populated 1`] = `
+"--- text ---
+{
+  "id": "adr:<id>",
+  "number": 1,
+  "adr": "ADR-0001",
+  "title": "Use SurrealDB for embedded storage",
+  "context": "Multi-tenant libraries need an isolated namespace per library-id.",
+  "decision": "Adopt embedded SurrealDB, giving each library-id its own database.",
+  "consequences": "One process to operate, but tenancy is a database-level concern.",
+  "alternatives": "Postgres with pgvector — rejected because it requires a server.",
+  "status": "accepted",
+  "tags": [
+    "storage"
+  ],
+  "source": "claude-code",
+  "archived": false,
+  "decided_at": "<timestamp>",
+  "created_at": "<timestamp>",
+  "updated_at": "<timestamp>",
+  "supersedes": null,
+  "superseded_by": [],
+  "mentioned_entities": [
+    {
+      "id": "entity:<id>",
+      "name": "mem-port"
+    }
+  ]
+}
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "detail",
+    "tool": "get_adr",
+    "key": "1",
+    "title": "ADR-0001 — Use SurrealDB for embedded storage",
+    "subtitle": "accepted · <date> · storage",
+    "sections": [
+      {
+        "label": "Context",
+        "value": "Multi-tenant libraries need an isolated namespace per library-id."
+      },
+      {
+        "label": "Decision",
+        "value": "Adopt embedded SurrealDB, giving each library-id its own database."
+      },
+      {
+        "label": "Consequences",
+        "value": "One process to operate, but tenancy is a database-level concern."
+      },
+      {
+        "label": "Alternatives",
+        "value": "Postgres with pgvector — rejected because it requires a server."
+      },
+      {
+        "label": "Concerns",
+        "value": "mem-port"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > get_entity with no summary and no relations 1`] = `
+"--- text ---
+{
+  "id": "entity:<id>",
+  "name": "checkout-service",
+  "entity_type": "concept",
+  "attributes": {},
+  "mentioned_by_memories": [],
+  "mentioned_by_episodes": [],
+  "mentioned_by_skills": [
+    {
+      "id": "skill:<id>",
+      "name": "debug-flaky-test"
+    }
+  ],
+  "mentioned_by_adrs": [],
+  "related_entities": []
+}
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "detail",
+    "tool": "get_entity",
+    "key": "checkout-service",
+    "title": "checkout-service",
+    "subtitle": "concept",
+    "sections": [
+      {
+        "label": "Skills",
+        "value": "debug-flaky-test"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > get_entity with relations and mentions 1`] = `
+"--- text ---
+{
+  "id": "entity:<id>",
+  "name": "Alice",
+  "entity_type": "concept",
+  "attributes": {},
+  "mentioned_by_memories": [
+    {
+      "id": "memory:<id>",
+      "content": "User prefers dark mode in all editors"
+    }
+  ],
+  "mentioned_by_episodes": [
+    {
+      "id": "episode:<id>",
+      "title": "Kickoff call with Alice"
+    }
+  ],
+  "mentioned_by_skills": [],
+  "mentioned_by_adrs": [],
+  "related_entities": [
+    {
+      "relation_type": "leads",
+      "name": "checkout-service",
+      "id": "entity:<id>"
+    }
+  ]
+}
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "detail",
+    "tool": "get_entity",
+    "key": "Alice",
+    "title": "Alice",
+    "subtitle": "concept",
+    "sections": [
+      {
+        "label": "Related entities",
+        "value": "leads: checkout-service"
+      },
+      {
+        "label": "Memories",
+        "value": "User prefers dark mode in all editors"
+      },
+      {
+        "label": "Episodes",
+        "value": "Kickoff call with Alice"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > get_skill 1`] = `
+"--- text ---
+{
+  "id": "skill:<id>",
+  "name": "debug-flaky-test",
+  "description": "Use when a test passes locally but fails intermittently in CI",
+  "content": "1. Check for shared state between tests.\\n2. Look for timing assumptions.",
+  "tags": [
+    "testing",
+    "ci"
+  ],
+  "source": "claude-code",
+  "status": "active",
+  "created_at": "<timestamp>",
+  "updated_at": "<timestamp>",
+  "mentioned_entities": [
+    {
+      "id": "entity:<id>",
+      "name": "checkout-service"
+    }
+  ]
+}
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "detail",
+    "tool": "get_skill",
+    "key": "debug-flaky-test",
+    "title": "debug-flaky-test",
+    "subtitle": "Use when a test passes locally but fails intermittently in CI",
+    "sections": [
+      {
+        "label": "Procedure",
+        "value": "1. Check for shared state between tests.\\n2. Look for timing assumptions."
+      },
+      {
+        "label": "Tags",
+        "value": "testing, ci"
+      },
+      {
+        "label": "Mentions",
+        "value": "checkout-service"
+      },
+      {
+        "label": "Recorded",
+        "value": "claude-code · active · <date>"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > list_adrs 1`] = `
+"--- text ---
+[
+  {
+    "id": "adr:<id>",
+    "number": 2,
+    "adr": "ADR-0002",
+    "title": "Keep embeddings local",
+    "decision": "Run all-MiniLM-L6-v2 locally via ONNX.",
+    "status": "proposed",
+    "tags": [],
+    "source": "manual",
+    "supersedes": null,
+    "decided_at": "<timestamp>"
+  },
+  {
+    "id": "adr:<id>",
+    "number": 1,
+    "adr": "ADR-0001",
+    "title": "Use SurrealDB for embedded storage",
+    "decision": "Adopt embedded SurrealDB, giving each library-id its own database.",
+    "status": "accepted",
+    "tags": [
+      "storage"
+    ],
+    "source": "claude-code",
+    "supersedes": null,
+    "decided_at": "<timestamp>"
+  }
+]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "list_adrs",
+    "heading": "Decisions (2)",
+    "empty": "No decisions recorded in this library yet.",
+    "items": [
+      {
+        "title": "ADR-0002 — Keep embeddings local",
+        "subtitle": "Run all-MiniLM-L6-v2 locally via ONNX.",
+        "meta": "proposed · <date> · manual"
+      },
+      {
+        "title": "ADR-0001 — Use SurrealDB for embedded storage",
+        "subtitle": "Adopt embedded SurrealDB, giving each library-id its own database.",
+        "meta": "accepted · <date> · storage · claude-code"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > list_episodes 1`] = `
+"--- text ---
+[
+  {
+    "id": "episode:<id>",
+    "title": "Kickoff call with Alice",
+    "content": "Walked through the storage requirements and agreed on an embedded-first approach.",
+    "source": "claude-code",
+    "occurred_at": "<timestamp>"
+  }
+]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "list_episodes",
+    "heading": "Episodes (1)",
+    "empty": "No episodes recorded in this library yet.",
+    "items": [
+      {
+        "title": "Kickoff call with Alice",
+        "subtitle": "Walked through the storage requirements and agreed on an embedded-first approach.",
+        "meta": "<date> · claude-code"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > list_skills 1`] = `
+"--- text ---
+[
+  {
+    "id": "skill:<id>",
+    "name": "debug-flaky-test",
+    "description": "Use when a test passes locally but fails intermittently in CI",
+    "tags": [
+      "testing",
+      "ci"
+    ],
+    "source": "claude-code",
+    "created_at": "<timestamp>"
+  }
+]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "list_skills",
+    "heading": "Skills (1)",
+    "empty": "No skills saved in this library yet.",
+    "items": [
+      {
+        "title": "debug-flaky-test",
+        "subtitle": "Use when a test passes locally but fails intermittently in CI",
+        "meta": "testing, ci · claude-code"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > search_adrs 1`] = `
+"--- text ---
+[
+  {
+    "id": "adr:<id>",
+    "number": 1,
+    "adr": "ADR-0001",
+    "title": "Use SurrealDB for embedded storage",
+    "context": "Multi-tenant libraries need an isolated namespace per library-id.",
+    "decision": "Adopt embedded SurrealDB, giving each library-id its own database.",
+    "consequences": "One process to operate, but tenancy is a database-level concern.",
+    "status": "accepted",
+    "tags": [
+      "storage"
+    ],
+    "score": 0.233
+  },
+  {
+    "id": "adr:<id>",
+    "number": 2,
+    "adr": "ADR-0002",
+    "title": "Keep embeddings local",
+    "context": "Sending record text to a hosted embedding API would leak private notes.",
+    "decision": "Run all-MiniLM-L6-v2 locally via ONNX.",
+    "status": "proposed",
+    "tags": [],
+    "score": 0.052
+  }
+]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "search_adrs",
+    "heading": "Decisions for \\"how do we isolate one tenant from another\\" (2)",
+    "empty": "No decisions matched that query.",
+    "items": [
+      {
+        "title": "ADR-0001 — Use SurrealDB for embedded storage",
+        "subtitle": "Adopt embedded SurrealDB, giving each library-id its own database.",
+        "meta": "score 0.233 · accepted · storage"
+      },
+      {
+        "title": "ADR-0002 — Keep embeddings local",
+        "subtitle": "Run all-MiniLM-L6-v2 locally via ONNX.",
+        "meta": "score 0.053 · proposed"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > search_memory 1`] = `
+"--- text ---
+[
+  {
+    "id": "memory:<id>",
+    "content": "User prefers dark mode in all editors",
+    "memory_type": "preference",
+    "importance": 0.8,
+    "score": 0.541
+  },
+  {
+    "id": "memory:<id>",
+    "content": "The checkout service is deployed from the main branch only",
+    "memory_type": "fact",
+    "importance": 0.5,
+    "score": -0.054
+  }
+]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "search_memory",
+    "heading": "Memories for \\"what editor theme does the user prefer\\" (2)",
+    "empty": "No memories matched that query.",
+    "items": [
+      {
+        "title": "User prefers dark mode in all editors",
+        "subtitle": "",
+        "meta": "preference · importance 0.8 · score 0.542"
+      },
+      {
+        "title": "The checkout service is deployed from the main branch only",
+        "subtitle": "",
+        "meta": "fact · importance 0.5 · score -0.054"
+      }
+    ]
+  }
+}
+"
+`;
+
+exports[`golden output > search_memory filtered and empty 1`] = `
+"--- text ---
+[]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "search_memory",
+    "heading": "Memories for \\"anything at all\\" (0)",
+    "empty": "No memories matched that query.",
+    "items": []
+  }
+}
+"
+`;
+
+exports[`golden output > search_skills 1`] = `
+"--- text ---
+[
+  {
+    "id": "skill:<id>",
+    "name": "debug-flaky-test",
+    "description": "Use when a test passes locally but fails intermittently in CI",
+    "tags": [
+      "testing",
+      "ci"
+    ],
+    "source": "claude-code",
+    "score": 0.711
+  }
+]
+--- _meta ---
+{
+  "mem-port/view": {
+    "kind": "list",
+    "tool": "search_skills",
+    "heading": "Skills for \\"test is flaky in CI\\" (1)",
+    "empty": "No skills matched that query.",
+    "items": [
+      {
+        "title": "debug-flaky-test",
+        "subtitle": "Use when a test passes locally but fails intermittently in CI",
+        "meta": "score 0.712 · testing, ci · claude-code"
+      }
+    ]
+  }
+}
+"
+`;

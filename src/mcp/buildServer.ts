@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
+import type { StoreProvider } from "../interfaces/provider.interface.js";
 import { VERSION } from "../version.js";
 import { registerAppUi } from "./apps.js";
 import { registerSaveMemory } from "./tools/saveMemory.js";
@@ -35,31 +35,45 @@ Proactively call search_memory at the start of a task that could be informed by 
 
 Don't save: information already derivable from the current codebase/files, one-off task state that's only relevant to this conversation, or anything the user has asked you not to keep.`;
 
-export function buildServer(root: Surreal, embeddings: EmbeddingProvider, dataDir: string): McpServer {
+/**
+ * What every tool needs, in one bag.
+ *
+ * Previously each `registerX` took its own subset of (root, embeddings,
+ * dataDir) in one of four different argument shapes; a single deps object
+ * means adding a dependency doesn't touch nineteen signatures.
+ */
+export interface ServerDeps {
+  store: StoreProvider;
+  embeddings: EmbeddingProvider;
+  /** Where export_library writes bundle files. */
+  dataDir: string;
+}
+
+export function buildServer(deps: ServerDeps): McpServer {
   const server = new McpServer({ name: "mem-port", version: VERSION }, { instructions: SERVER_INSTRUCTIONS });
 
   // The single ui:// template every read tool points at via _meta.ui.resourceUri.
   registerAppUi(server);
 
-  registerSaveMemory(server, root, embeddings);
-  registerSearchMemory(server, root, embeddings);
-  registerSaveEpisode(server, root, embeddings);
-  registerListEpisodes(server, root);
-  registerGetEntity(server, root);
-  registerRelateEntities(server, root);
-  registerForgetMemory(server, root);
-  registerExportLibrary(server, root, embeddings, dataDir);
-  registerImportLibrary(server, root);
-  registerSaveSkill(server, root, embeddings);
-  registerSearchSkills(server, root, embeddings);
-  registerListSkills(server, root);
-  registerGetSkill(server, root);
-  registerForgetSkill(server, root);
-  registerSaveAdr(server, root, embeddings);
-  registerSearchAdrs(server, root, embeddings);
-  registerListAdrs(server, root);
-  registerGetAdr(server, root);
-  registerForgetAdr(server, root);
+  registerSaveMemory(server, deps);
+  registerSearchMemory(server, deps);
+  registerSaveEpisode(server, deps);
+  registerListEpisodes(server, deps);
+  registerGetEntity(server, deps);
+  registerRelateEntities(server, deps);
+  registerForgetMemory(server, deps);
+  registerExportLibrary(server, deps);
+  registerImportLibrary(server, deps);
+  registerSaveSkill(server, deps);
+  registerSearchSkills(server, deps);
+  registerListSkills(server, deps);
+  registerGetSkill(server, deps);
+  registerForgetSkill(server, deps);
+  registerSaveAdr(server, deps);
+  registerSearchAdrs(server, deps);
+  registerListAdrs(server, deps);
+  registerGetAdr(server, deps);
+  registerForgetAdr(server, deps);
 
   return server;
 }

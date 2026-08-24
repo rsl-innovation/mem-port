@@ -2,7 +2,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { appViewMeta } from "./apps.js";
 import { text, type Extra } from "./format.js";
 
-export { captionOf, formatScore, formatTags, formatWhen, text, type Extra } from "./format.js";
+export { captionOf, formatAdrNumber, formatScore, formatTags, formatWhen, text, type Extra } from "./format.js";
 
 /**
  * The view model a read tool states about its own result.

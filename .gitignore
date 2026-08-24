@@ -10,3 +10,12 @@ src/mcp/ui/generated.ts
 
 # Local working notes; the canonical copy is an episode in mem-port
 RELEASE_NOTES.md
+
+# Local configuration; .env.example is the committed reference
+.env
+.env.*
+!.env.example
+
+# Scratch scripts from local probing
+*.tmp.mts
+*.tmp.mjs

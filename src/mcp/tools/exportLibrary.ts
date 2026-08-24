@@ -2,20 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
-import { resolveLibrary } from "../resolveLibrary.js";
+import { libraryIdOf, resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 import { exportBundle } from "../../port/exportBundle.js";
-import type { EmbeddingProvider } from "../../embeddings/provider.js";
+import { MEMORY_TYPES } from "../../interfaces/memories.interface.js";
 
-const HEADER_NAME = "library-id";
-const MEMORY_TYPES = ["fact", "preference", "decision", "task", "reference"] as const;
-
-export function registerExportLibrary(
-  server: McpServer,
-  root: Surreal,
-  embeddings: EmbeddingProvider,
-  dataDir: string
-): void {
+export function registerExportLibrary(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "export_library",
     {
@@ -33,19 +25,18 @@ export function registerExportLibrary(
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
-      const rawLibraryId = extra.requestInfo?.headers?.[HEADER_NAME];
-      const libraryId = Array.isArray(rawLibraryId) ? rawLibraryId[0] : (rawLibraryId ?? "unknown");
+      const store = await resolveLibrary(extra, deps.store);
+      const libraryId = libraryIdOf(extra);
 
       const hasScope = args.memory_types || args.since;
       const bundle = await exportBundle(
-        session,
+        store,
         libraryId,
-        { id: embeddings.id, dimensions: embeddings.dimensions },
+        { id: deps.embeddings.id, dimensions: deps.embeddings.dimensions },
         hasScope ? { memoryTypes: args.memory_types, since: args.since } : undefined
       );
 
-      const exportsDir = path.join(dataDir, "exports");
+      const exportsDir = path.join(deps.dataDir, "exports");
       await mkdir(exportsDir, { recursive: true });
       const fileName = `${libraryId.replace(/[^a-zA-Z0-9_-]/g, "_")}-${Date.now()}.memport.json`;
       const filePath = path.join(exportsDir, fileName);

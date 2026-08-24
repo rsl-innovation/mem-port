@@ -1,25 +1,14 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { ADR_STATUSES, formatAdrNumber } from "../../db/adr.js";
+import type { ServerDeps } from "../buildServer.js";
+import { ADR_STATUSES } from "../../interfaces/adrs.interface.js";
+import { formatAdrNumber } from "../format.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { captionOf, formatTags, formatWhen, listResult } from "../view.js";
 
-interface AdrRow {
-  id: unknown;
-  number: number;
-  title: string;
-  decision: string;
-  status: string;
-  tags: string[];
-  source: string;
-  supersedes: unknown | null;
-  decided_at: unknown;
-}
-
-export function registerListAdrs(server: McpServer, root: Surreal): void {
+export function registerListAdrs(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "list_adrs",
@@ -44,34 +33,17 @@ export function registerListAdrs(server: McpServer, root: Surreal): void {
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      const conditions: string[] = ["archived = false"];
-      const bindings: Record<string, unknown> = { limit: args.limit ?? 20 };
-
-      if (args.status) {
-        conditions.push("status = $status");
-        bindings.status = args.status;
-      }
-      if (args.tag) {
-        conditions.push("tags CONTAINS $tag");
-        bindings.tag = args.tag;
-      }
-      if (args.source) {
-        conditions.push("source = $source");
-        bindings.source = args.source;
-      }
-
-      const [rows] = await session.query<[AdrRow[]]>(
-        `SELECT id, number, title, decision, status, tags, source, supersedes, decided_at FROM adr
-         WHERE ${conditions.join(" AND ")}
-         ORDER BY number DESC
-         LIMIT $limit`,
-        bindings
-      );
+      const rows = await store.adrs.list({
+        status: args.status,
+        tag: args.tag,
+        source: args.source,
+        limit: args.limit ?? 20,
+      });
 
       const results = rows.map((row) => ({
-        id: String(row.id),
+        id: row.id,
         number: row.number,
         adr: formatAdrNumber(row.number),
         title: row.title,
@@ -79,7 +51,7 @@ export function registerListAdrs(server: McpServer, root: Surreal): void {
         status: row.status,
         tags: row.tags,
         source: row.source,
-        supersedes: row.supersedes ? String(row.supersedes) : null,
+        supersedes: row.supersedes_id ?? null,
         decided_at: row.decided_at,
       }));
 

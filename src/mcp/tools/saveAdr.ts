@@ -1,12 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DateTime, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { createMentionEdges, resolveEntityRefs } from "../../db/entities.js";
-import { ADR_STATUSES, formatAdrNumber, nextAdrNumber, resolveAdrRef } from "../../db/adr.js";
-import type { EmbeddingProvider } from "../../embeddings/provider.js";
+import type { ServerDeps } from "../buildServer.js";
+import { ADR_STATUSES } from "../../interfaces/adrs.interface.js";
+import { formatAdrNumber } from "../format.js";
+import { saveAdr } from "../../services/adrs.js";
 
-export function registerSaveAdr(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
+export function registerSaveAdr(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "save_adr",
     {
@@ -65,66 +65,17 @@ export function registerSaveAdr(server: McpServer, root: Surreal, embeddings: Em
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      let supersededId: unknown | null = null;
-      if (args.supersedes !== undefined) {
-        supersededId = await resolveAdrRef(session, args.supersedes);
-        if (!supersededId) {
-          return {
-            content: [{ type: "text" as const, text: `No ADR found matching '${args.supersedes}'` }],
-            isError: true,
-          };
-        }
-      }
+      const outcome = await saveAdr(store, deps.embeddings, args);
 
-      const embedding = await embeddings.embed(`${args.title}\n${args.context}\n${args.decision}`);
-      const number = await nextAdrNumber(session);
-
-      const [created] = await session.query<[Array<{ id: unknown }>]>(
-        `CREATE adr CONTENT {
-           number: $number,
-           title: $title,
-           context: $context,
-           decision: $decision,
-           consequences: $consequences,
-           alternatives: $alternatives,
-           status: $status,
-           supersedes: $supersedes,
-           tags: $tags,
-           source: $source,
-           decided_at: $decided_at,
-           embedding: $embedding
-         }`,
-        {
-          number,
-          title: args.title,
-          context: args.context,
-          decision: args.decision,
-          consequences: args.consequences ?? undefined,
-          alternatives: args.alternatives ?? undefined,
-          status: args.status ?? "proposed",
-          supersedes: supersededId ?? undefined,
-          tags: args.tags ?? [],
-          source: args.source ?? "manual",
-          decided_at: args.decided_at ? new DateTime(args.decided_at) : undefined,
-          embedding,
-        }
-      );
-
-      const record = created[0];
-
-      if (supersededId) {
-        await session.query(`UPDATE $id SET status = 'superseded', updated_at = time::now()`, { id: supersededId });
-      }
-
-      const entityIds = await resolveEntityRefs(session, args.entity_refs);
-      await createMentionEdges(session, record.id, entityIds);
-
-      const supersedeNote = supersededId ? `, superseding ${String(supersededId)}` : "";
+      const supersedeNote = outcome.supersededId ? `, superseding ${outcome.supersededId}` : "";
       return {
         content: [
-          { type: "text" as const, text: `Saved ${formatAdrNumber(number)} (${String(record.id)})${supersedeNote}` },
+          {
+            type: "text" as const,
+            text: `Saved ${formatAdrNumber(outcome.number)} (${outcome.id})${supersedeNote}`,
+          },
         ],
       };
     }

@@ -1,21 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { captionOf, formatTags, listResult } from "../view.js";
 
-interface SkillRow {
-  id: unknown;
-  name: string;
-  description: string;
-  tags: string[];
-  source: string;
-  created_at: unknown;
-}
-
-export function registerListSkills(server: McpServer, root: Surreal): void {
+export function registerListSkills(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "list_skills",
@@ -30,36 +21,14 @@ export function registerListSkills(server: McpServer, root: Surreal): void {
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      const conditions: string[] = ["status = 'active'"];
-      const bindings: Record<string, unknown> = { limit: args.limit ?? 20 };
-
-      if (args.tag) {
-        conditions.push("tags CONTAINS $tag");
-        bindings.tag = args.tag;
-      }
-      if (args.source) {
-        conditions.push("source = $source");
-        bindings.source = args.source;
-      }
-
-      const [rows] = await session.query<[SkillRow[]]>(
-        `SELECT id, name, description, tags, source, created_at FROM skill
-         WHERE ${conditions.join(" AND ")}
-         ORDER BY created_at DESC
-         LIMIT $limit`,
-        bindings
-      );
-
-      const results = rows.map((row) => ({
-        id: String(row.id),
-        name: row.name,
-        description: row.description,
-        tags: row.tags,
-        source: row.source,
-        created_at: row.created_at,
-      }));
+      const results = await store.skills.list({
+        status: "active",
+        tag: args.tag,
+        source: args.source,
+        limit: args.limit ?? 20,
+      });
 
       return listResult(extra, results, {
         tool: "list_skills",

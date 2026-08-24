@@ -1,31 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { formatAdrNumber } from "../../db/adr.js";
+import type { ServerDeps } from "../buildServer.js";
+import { formatAdrNumber } from "../format.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { detailResult } from "../view.js";
 
-interface EntityRow {
-  id: unknown;
-  name: string;
-  entity_type: string;
-  summary: string | null;
-  attributes: Record<string, unknown>;
-  mentioning_memories: Array<{ id: unknown; content: string }>;
-  mentioning_episodes: Array<{ id: unknown; title: string }>;
-  mentioning_skills: Array<{ id: unknown; name: string }>;
-  mentioning_adrs: Array<{ id: unknown; number: number; title: string }>;
-}
-
-interface RelatedRow {
-  relation_type: string;
-  name: string;
-  id: unknown;
-}
-
-export function registerGetEntity(server: McpServer, root: Surreal): void {
+export function registerGetEntity(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "get_entity",
@@ -50,24 +32,9 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
         };
       }
 
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
-      const target = args.id
-        ? `[<record<entity>> $id]`
-        : `(SELECT VALUE id FROM entity WHERE name = $name LIMIT 1)`;
-
-      const [entityRows] = await session.query<[EntityRow[]]>(
-        `SELECT
-           *,
-           <-mentions<-memory.{id, content} AS mentioning_memories,
-           <-mentions<-episode.{id, title} AS mentioning_episodes,
-           <-mentions<-skill.{id, name} AS mentioning_skills,
-           <-mentions<-adr.{id, number, title} AS mentioning_adrs
-         FROM ${target}`,
-        args.id ? { id: new StringRecordId(args.id) } : { name: args.name }
-      );
-
-      const entity = entityRows[0];
+      const entity = await store.entities.detail(args.id ? { id: args.id } : { name: args.name! });
       if (!entity) {
         return {
           content: [{ type: "text" as const, text: "Entity not found" }],
@@ -75,27 +42,26 @@ export function registerGetEntity(server: McpServer, root: Surreal): void {
         };
       }
 
-      const [related] = await session.query<[RelatedRow[]]>(
-        `SELECT relation_type, out.name AS name, out.id AS id FROM relates_to WHERE in = $entity`,
-        { entity: entity.id }
-      );
-
       const result = {
-        id: String(entity.id),
+        id: entity.id,
         name: entity.name,
         entity_type: entity.entity_type,
         summary: entity.summary,
         attributes: entity.attributes,
-        mentioned_by_memories: entity.mentioning_memories.map((m) => ({ id: String(m.id), content: m.content })),
-        mentioned_by_episodes: entity.mentioning_episodes.map((e) => ({ id: String(e.id), title: e.title })),
-        mentioned_by_skills: entity.mentioning_skills.map((s) => ({ id: String(s.id), name: s.name })),
+        mentioned_by_memories: entity.mentioning_memories,
+        mentioned_by_episodes: entity.mentioning_episodes,
+        mentioned_by_skills: entity.mentioning_skills,
         mentioned_by_adrs: entity.mentioning_adrs.map((a) => ({
-          id: String(a.id),
+          id: a.id,
           number: a.number,
           adr: formatAdrNumber(a.number),
           title: a.title,
         })),
-        related_entities: related.map((r) => ({ relation_type: r.relation_type, name: r.name, id: String(r.id) })),
+        related_entities: entity.related_entities.map((r) => ({
+          relation_type: r.relation_type,
+          name: r.name,
+          id: r.id,
+        })),
       };
 
       return detailResult(extra, result, {

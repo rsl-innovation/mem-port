@@ -1,10 +1,68 @@
 import os from "node:os";
 import path from "node:path";
 
+/**
+ * Which storage engine backs the daemon.
+ *
+ * Both current values are SurrealDB — the split is transport, because the two
+ * behave differently enough to matter (see `assertSupportedUrl`). A driver for
+ * another engine would add its own value here and its own branch in
+ * `createStoreProvider`.
+ */
+export type StoreDriver = "surreal-embedded" | "surreal-remote";
+
+export interface SurrealStoreConfig {
+  driver: StoreDriver;
+  /** `surrealkv://<path>` for embedded, `ws://` or `wss://` for a hosted server. */
+  url: string;
+  namespace: string;
+  /** How to authenticate. Absent for embedded, which runs as an implicit root. */
+  auth?: { username: string; password: string } | { token: string };
+  /** Prepended to every tenant database name, for a cluster shared with other apps. */
+  databasePrefix: string;
+  /**
+   * Cap on cached per-library sessions. Each one is server-side state on a
+   * hosted cluster, so a daemon serving thousands of libraries must not hold
+   * them all open. Least-recently-used sessions are closed on eviction.
+   */
+  maxSessions: number;
+}
+
+export type AuthMode = "off" | "required";
+
+export interface AuthConfig {
+  /**
+   * Whether callers must present an API key.
+   *
+   * Defaults to whatever the bind address implies: "off" on loopback, where
+   * the operating system is already the boundary and a personal daemon should
+   * not need credentials, and "required" on any other interface, where there
+   * is no boundary left. Set MEM_PORT_AUTH to override in either direction --
+   * "required" on loopback to develop against the real thing, "off" elsewhere
+   * only when something in front is doing the authenticating.
+   */
+  mode: AuthMode;
+  /** Creates the first admin when the control plane is empty. */
+  bootstrapAdmin?: { username: string; password: string };
+  /** How long an admin panel login stays valid. */
+  sessionTtlHours: number;
+}
+
 export interface Config {
   port: number;
+  /**
+   * Interface to bind. Defaults to loopback, which is the only thing currently
+   * standing between the MCP endpoint and anyone who can reach the host: there
+   * is no authentication on the request path, and `library-id` selects a
+   * tenant rather than proving a right to it. Set this to 0.0.0.0 only where
+   * something else — a platform auth layer, a private network — is enforcing
+   * who may connect.
+   */
+  host: string;
   dataDir: string;
   embeddingModel: string;
+  store: SurrealStoreConfig;
+  auth: AuthConfig;
 }
 
 function defaultDataDir(): string {
@@ -19,10 +77,155 @@ function defaultDataDir(): string {
   return path.join(xdgDataHome, "mem-port");
 }
 
+function schemeOf(url: string): string {
+  const match = /^([a-z][a-z0-9+.-]*):/i.exec(url.trim());
+  if (!match) {
+    throw new Error(`MEM_PORT_DB_URL must start with a scheme, e.g. "wss://host" — got "${url}"`);
+  }
+  return match[1].toLowerCase();
+}
+
+const EMBEDDED_SCHEMES = new Set(["surrealkv", "rocksdb", "mem", "indxdb", "surrealkv+versioned"]);
+const REMOTE_SCHEMES = new Set(["ws", "wss"]);
+
+/**
+ * Reject transports that cannot support how mem-port uses SurrealDB, at
+ * startup rather than on the first request that trips over it.
+ *
+ * The HTTP engine advertises neither `Sessions` nor `Transactions`. mem-port
+ * needs both: tenancy is a forked session per library-id, and import runs in a
+ * transaction. Over http(s) every tool call would fail with
+ * `UnsupportedFeatureError`, so pointing someone at wss:// is far kinder than
+ * letting them discover that one request at a time.
+ */
+function assertSupportedUrl(url: string, driver: StoreDriver): void {
+  const scheme = schemeOf(url);
+
+  if (scheme === "http" || scheme === "https") {
+    throw new Error(
+      `MEM_PORT_DB_URL uses ${scheme}://, which SurrealDB's HTTP engine cannot back: it supports neither sessions ` +
+        `(mem-port gives each library-id its own forked session) nor transactions (import_library needs one). ` +
+        `Use ws:// or wss:// against the same host instead.`
+    );
+  }
+
+  if (driver === "surreal-remote" && !REMOTE_SCHEMES.has(scheme)) {
+    throw new Error(`Store driver "surreal-remote" needs a ws:// or wss:// URL — got "${scheme}://".`);
+  }
+  if (driver === "surreal-embedded" && !EMBEDDED_SCHEMES.has(scheme)) {
+    throw new Error(
+      `Store driver "surreal-embedded" needs a local URL such as surrealkv:// or mem:// — got "${scheme}://".`
+    );
+  }
+}
+
+function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreConfig>): SurrealStoreConfig {
+  const url =
+    overrides?.url ?? process.env.MEM_PORT_DB_URL ?? `surrealkv://${path.join(dataDir, "memport.db")}`;
+
+  // The scheme is the honest signal of which driver is in play, so an explicit
+  // MEM_PORT_STORE only has to exist for the case where someone wants the
+  // mismatch reported rather than inferred.
+  const declared = overrides?.driver ?? (process.env.MEM_PORT_STORE as StoreDriver | undefined);
+  const driver: StoreDriver = declared ?? (REMOTE_SCHEMES.has(schemeOf(url)) ? "surreal-remote" : "surreal-embedded");
+  if (driver !== "surreal-embedded" && driver !== "surreal-remote") {
+    throw new Error(`Unknown MEM_PORT_STORE value "${driver}". Expected "surreal-embedded" or "surreal-remote".`);
+  }
+
+  assertSupportedUrl(url, driver);
+
+  const username = process.env.MEM_PORT_DB_USER;
+  const password = process.env.MEM_PORT_DB_PASS;
+  const token = process.env.MEM_PORT_DB_TOKEN;
+
+  if (token && username) {
+    throw new Error("Set either MEM_PORT_DB_TOKEN or MEM_PORT_DB_USER/MEM_PORT_DB_PASS, not both.");
+  }
+  if (username && !password) {
+    throw new Error("MEM_PORT_DB_USER is set without MEM_PORT_DB_PASS.");
+  }
+
+  let auth = overrides?.auth;
+  if (!auth && token) {
+    auth = { token };
+  } else if (!auth && username && password) {
+    auth = { username, password };
+  }
+
+  // An embedded database is a file this process owns, so it needs no
+  // credentials. A hosted one is a shared server, and connecting anonymously
+  // would either fail deep inside the SDK or — worse — succeed against a
+  // cluster left open.
+  if (driver === "surreal-remote" && !auth) {
+    throw new Error(
+      "A remote SurrealDB URL needs credentials: set MEM_PORT_DB_USER and MEM_PORT_DB_PASS, or MEM_PORT_DB_TOKEN. " +
+        "The user must be root- or namespace-level, since mem-port creates a database per library-id."
+    );
+  }
+
+  const maxSessionsRaw = process.env.MEM_PORT_DB_MAX_SESSIONS;
+  const maxSessions = overrides?.maxSessions ?? (maxSessionsRaw ? Number(maxSessionsRaw) : 256);
+  if (!Number.isInteger(maxSessions) || maxSessions < 1) {
+    throw new Error(`MEM_PORT_DB_MAX_SESSIONS must be a positive integer — got "${maxSessionsRaw}".`);
+  }
+
+  return {
+    driver,
+    url,
+    namespace: overrides?.namespace ?? process.env.MEM_PORT_DB_NAMESPACE ?? "memport",
+    auth,
+    databasePrefix: overrides?.databasePrefix ?? process.env.MEM_PORT_DB_PREFIX ?? "",
+    maxSessions,
+  };
+}
+
+function isLoopback(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+function resolveAuthConfig(host: string, overrides?: Partial<AuthConfig>): AuthConfig {
+  const declared = process.env.MEM_PORT_AUTH?.trim().toLowerCase();
+  if (declared !== undefined && declared !== "off" && declared !== "required") {
+    throw new Error(`Invalid MEM_PORT_AUTH "${declared}". Expected "off" or "required".`);
+  }
+
+  const mode: AuthMode = overrides?.mode ?? (declared as AuthMode | undefined) ?? (isLoopback(host) ? "off" : "required");
+
+  const username = process.env.MEM_PORT_ADMIN_USER;
+  const password = process.env.MEM_PORT_ADMIN_PASSWORD;
+  if (password && !username) {
+    throw new Error("MEM_PORT_ADMIN_PASSWORD is set without MEM_PORT_ADMIN_USER.");
+  }
+  if (username && !password) {
+    throw new Error("MEM_PORT_ADMIN_USER is set without MEM_PORT_ADMIN_PASSWORD.");
+  }
+
+  const bootstrapAdmin =
+    overrides?.bootstrapAdmin ?? (username && password ? { username, password } : undefined);
+
+  const ttlRaw = process.env.MEM_PORT_SESSION_TTL_HOURS;
+  const sessionTtlHours = overrides?.sessionTtlHours ?? (ttlRaw ? Number(ttlRaw) : 12);
+  if (!Number.isFinite(sessionTtlHours) || sessionTtlHours <= 0) {
+    throw new Error(`MEM_PORT_SESSION_TTL_HOURS must be a positive number -- got "${ttlRaw}".`);
+  }
+
+  return { mode, bootstrapAdmin, sessionTtlHours };
+}
+
 export function resolveConfig(overrides: Partial<Config> = {}): Config {
-  const port = overrides.port ?? (process.env.MEM_PORT_PORT ? Number(process.env.MEM_PORT_PORT) : 8787);
+  // PORT is the convention every container platform injects (Cloud Run, Heroku,
+  // Fly); MEM_PORT_PORT stays ahead of it so an explicit setting still wins.
+  const portEnv = process.env.MEM_PORT_PORT ?? process.env.PORT;
+  const port = overrides.port ?? (portEnv ? Number(portEnv) : 8787);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid port "${portEnv}". Expected an integer between 0 and 65535.`);
+  }
+
+  const host = overrides.host ?? process.env.MEM_PORT_HOST ?? "127.0.0.1";
   const dataDir = overrides.dataDir ?? process.env.MEM_PORT_DATA_DIR ?? defaultDataDir();
   const embeddingModel =
     overrides.embeddingModel ?? process.env.MEM_PORT_EMBEDDING_MODEL ?? "Xenova/all-MiniLM-L6-v2";
-  return { port, dataDir, embeddingModel };
+  const store = resolveStoreConfig(dataDir, overrides.store);
+  const auth = resolveAuthConfig(host, overrides.auth);
+  return { port, host, dataDir, embeddingModel, store, auth };
 }

@@ -264,14 +264,101 @@ journalctl --user -u mem-port -f
 | `MEM_PORT_MODEL_CACHE_DIR` | `<data-dir>/models` | Override the embedding model cache location |
 | `MCP_APPS` / `MEM_PORT_MCP_APPS` | on | Set to `0` to stop the read tools declaring an [MCP Apps](#rendered-results-mcp-apps) UI |
 
-All state lives under one data directory — the SurrealDB store (`surrealkv://`, persistent across restarts) and the cached local embedding model. Delete the data dir to fully reset.
+By default all state lives under one data directory — the SurrealDB store (`surrealkv://`, persistent across restarts) and the cached local embedding model. Delete the data dir to fully reset.
+
+### Using a hosted SurrealDB
+
+Point mem-port at an existing SurrealDB server instead of the embedded engine:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `MEM_PORT_DB_URL` | `surrealkv://<data-dir>/memport.db` | Database URL. A `ws://` or `wss://` URL selects the hosted driver |
+| `MEM_PORT_DB_NAMESPACE` | `memport` | Namespace holding one database per library-id |
+| `MEM_PORT_DB_USER` / `MEM_PORT_DB_PASS` | — | Credentials. Required for a hosted server |
+| `MEM_PORT_DB_TOKEN` | — | Bearer token, as an alternative to user/password |
+| `MEM_PORT_DB_PREFIX` | none | Prefix for tenant database names, on a cluster shared with other apps |
+| `MEM_PORT_DB_MAX_SESSIONS` | `256` | Cached per-library sessions before the least recently used is closed |
+
+```bash
+MEM_PORT_DB_URL=wss://your-instance.surreal.cloud \
+MEM_PORT_DB_USER=root \
+MEM_PORT_DB_PASS=... \
+  mem-port serve
+```
+
+Three constraints worth knowing before you point this at a cluster. Each is checked at startup, so a misconfiguration fails once with an explanation rather than on every tool call:
+
+- **SurrealDB 3.0 or newer.** Sessions and transactions are both server-side 3.0 features, and mem-port needs both — a forked session per library-id for tenancy, and a transaction for `import_library`. A 2.x server connects fine and then fails on every request.
+- **WebSocket only.** SurrealDB's HTTP engine supports neither of those features regardless of server version, so an `http(s)://` URL is rejected.
+- **The user must be root- or namespace-level.** mem-port creates a database per library-id inside its namespace and defines that database's schema on first use, which a database-scoped user cannot do.
+
+### Accounts and the admin panel
+
+By default mem-port has no accounts: it binds loopback, and the operating system
+is the boundary. That is right for a personal daemon and wrong the moment the
+daemon is reachable from anywhere else, so authentication switches on with
+exposure — off on loopback, required on any other interface, and
+`MEM_PORT_AUTH` overrides either way.
+
+With auth on, an admin panel is served at `/admin`. Sign in with the bootstrap
+admin (`MEM_PORT_ADMIN_USER` / `MEM_PORT_ADMIN_PASSWORD`, used only while no
+admin exists) and from there:
+
+- **create workspaces** — a workspace is one isolated knowledge graph, and its
+  name is what clients send as `library-id`
+- **create users**, and issue each an API key (shown once; only a hash is kept)
+  with revocation when a key needs rotating
+- **grant a user access to specific workspaces**
+- **explore a workspace's graph** — a read-only view of what a workspace holds
+  and how its entities connect, which is the quickest way to check whether a
+  newly connected client is actually writing anything
+
+The panel also serves its own documentation at `/admin/docs`, covering both the
+portal and the product, with copy-pasteable client configuration for the URL the
+admin actually reached it on.
+
+Clients then send two headers, and nothing else changes:
+
+```
+Authorization: Bearer <the user's key>
+library-id: <a workspace they were granted>
+```
+
+Being an admin does not confer data access — admins decide who may reach what,
+which is a different power from reading it, so an admin who wants a workspace
+grants it to themselves.
+
+### Deploying
+
+Container image, a local Compose stack, and Cloud Run manifests live in
+[`deployments/`](deployments/). Configuration is documented in
+[`.env.example`](.env.example).
+
+Two things change when mem-port stops running on localhost, both covered there:
+a hosted database becomes required (the embedded engine loses data on ephemeral
+filesystems and lets replicas diverge), and the loopback bind that currently
+serves as the security boundary goes away — mem-port has no authentication of
+its own, so something else has to provide one. The supplied manifests default to
+closed for that reason.
+
+### Using a different database
+
+Storage sits behind a contract in [`src/interfaces/`](src/interfaces/), expressed in domain terms — `store.skills.search(vector, filter)`, `store.entities.detail({ name })` — with no query language, record-id objects or graph syntax in it. SurrealDB is one implementation of that contract, confined entirely to `src/db/surreal/`; nothing under `src/mcp/`, `src/port/` or `src/services/` imports the driver.
+
+To add another engine (Postgres with pgvector, say):
+
+1. Implement [`LibraryStore`](src/interfaces/store.interface.ts) and its seven sub-stores, plus [`StoreProvider`](src/interfaces/provider.interface.ts), under `src/db/<engine>/`.
+2. Add a case to [`createStoreProvider`](src/db/createStoreProvider.ts) and a driver value in [`src/config.ts`](src/config.ts).
+
+The contract's obligations are the parts worth reading twice: ids and timestamps cross the boundary as strings, unset optional fields stay absent rather than becoming `null`, `search` ranks by cosine similarity and excludes rows with no embedding, `entities.detail` answers a four-way fan-in without an N+1, and `transaction(fn)` must roll back on `Rollback` while still returning its payload. The existing end-to-end suite exercises all of it through the real tool surface, so a new driver is verified by pointing the tests at it.
 
 ## Development
 
 ```bash
 npm install
 npm run dev        # start the daemon with tsx, no build step
-npm test           # vitest: tenancy isolation + export/import round-trip
+npm test           # vitest: golden output, tenancy, skills, ADRs, export/import round-trip
+                   # the hosted-SurrealDB suite needs Docker; it skips (with a warning) without it
 npm run typecheck
 npm run build       # tsup -> dist/, what npx @rsl-innovation/mem-port actually runs
 ```

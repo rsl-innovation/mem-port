@@ -1,25 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { captionOf, detailResult, formatTags, formatWhen } from "../view.js";
 
-interface SkillRow {
-  id: unknown;
-  name: string;
-  description: string;
-  content: string;
-  tags: string[];
-  source: string;
-  status: string;
-  created_at: unknown;
-  updated_at: unknown;
-  mentioned_entities: Array<{ id: unknown; name: string }>;
-}
-
-export function registerGetSkill(server: McpServer, root: Surreal): void {
+export function registerGetSkill(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "get_skill",
@@ -45,43 +32,14 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
         };
       }
 
-      const session = await resolveLibrary(extra, root);
+      const store = await resolveLibrary(extra, deps.store);
 
       // A name resolves to the LIVE skill only, or a superseded procedure could
       // come back reading as current. Reaching an archived version stays
       // possible, deliberately, by its id.
-      //
-      // Filter status in JS, not in the WHERE clause.
-      //
-      // `WHERE name = $name AND status = 'active'` returns NOTHING once two rows
-      // share a name, even though each condition alone matches — verified
-      // against a live library holding exactly one active and one archived 'dc':
-      //   name only              -> ["archived", "active"]
-      //   status only            -> the active row
-      //   name AND status        -> []
-      // The non-unique skill_name_idx is what the planner reaches for, and the
-      // conjunction comes back empty across sessions. Since save_skill now
-      // archives the version it replaces, duplicate names are the normal case,
-      // so the compound form cannot be used anywhere on this table.
-      let recordId: unknown;
-      if (args.id) {
-        recordId = new StringRecordId(args.id);
-      } else {
-        const [matches] = await session.query<[Array<{ id: unknown; status: string }>]>(
-          `SELECT id, status FROM skill WHERE name = $name`,
-          { name: args.name }
-        );
-        recordId = matches.find((row) => row.status === "active")?.id;
-      }
+      const id = args.id ?? (await store.skills.findByName(args.name!, { status: "active" }))[0]?.id;
+      const skill = id ? await store.skills.getById(id) : null;
 
-      const [rows] = recordId
-        ? await session.query<[SkillRow[]]>(
-            `SELECT *, ->mentions->entity.{id, name} AS mentioned_entities FROM [<record<skill>> $id]`,
-            { id: recordId }
-          )
-        : [[]];
-
-      const skill = rows[0];
       if (!skill) {
         return {
           content: [{ type: "text" as const, text: "Skill not found" }],
@@ -90,7 +48,7 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
       }
 
       const result = {
-        id: String(skill.id),
+        id: skill.id,
         name: skill.name,
         description: skill.description,
         content: skill.content,
@@ -99,7 +57,7 @@ export function registerGetSkill(server: McpServer, root: Surreal): void {
         status: skill.status,
         created_at: skill.created_at,
         updated_at: skill.updated_at,
-        mentioned_entities: skill.mentioned_entities.map((e) => ({ id: String(e.id), name: e.name })),
+        mentioned_entities: skill.mentioned_entities,
       };
 
       return detailResult(extra, result, {

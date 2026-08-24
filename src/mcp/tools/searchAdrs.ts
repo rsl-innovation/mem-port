@@ -1,26 +1,14 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
-import { ADR_STATUSES, formatAdrNumber } from "../../db/adr.js";
+import type { ServerDeps } from "../buildServer.js";
+import { ADR_STATUSES } from "../../interfaces/adrs.interface.js";
+import { formatAdrNumber } from "../format.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { appToolMeta } from "../apps.js";
 import { captionOf, formatScore, formatTags, listResult } from "../view.js";
-import type { EmbeddingProvider } from "../../embeddings/provider.js";
 
-interface AdrRow {
-  id: unknown;
-  number: number;
-  title: string;
-  context: string;
-  decision: string;
-  consequences: string | null;
-  status: string;
-  tags: string[];
-  score: number;
-}
-
-export function registerSearchAdrs(server: McpServer, root: Surreal, embeddings: EmbeddingProvider): void {
+export function registerSearchAdrs(server: McpServer, deps: ServerDeps): void {
   registerAppTool(
     server,
     "search_adrs",
@@ -55,32 +43,20 @@ export function registerSearchAdrs(server: McpServer, root: Surreal, embeddings:
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
-      const queryVector = await embeddings.embed(args.query);
+      const store = await resolveLibrary(extra, deps.store);
+      const queryVector = await deps.embeddings.embed(args.query);
 
-      const statusFilter = args.status ? "AND status = $status" : "";
-      const tagFilter = args.tags && args.tags.length > 0 ? "AND tags CONTAINSANY $tags" : "";
-
-      const [rows] = await session.query<[AdrRow[]]>(
-        `SELECT id, number, title, context, decision, consequences, status, tags,
-                vector::similarity::cosine(embedding, $queryVector) AS score
-         FROM adr
-         WHERE archived = false AND embedding != NONE ${statusFilter} ${tagFilter}
-         ORDER BY score DESC
-         LIMIT $limit`,
-        {
-          queryVector,
-          status: args.status,
-          tags: args.tags,
-          limit: args.limit ?? 10,
-        }
-      );
+      const rows = await store.adrs.search(queryVector, {
+        status: args.status,
+        tags: args.tags,
+        limit: args.limit ?? 10,
+      });
 
       const minScore = args.min_score;
       const results = rows
         .filter((row) => minScore === undefined || row.score >= minScore)
         .map((row) => ({
-          id: String(row.id),
+          id: row.id,
           number: row.number,
           adr: formatAdrNumber(row.number),
           title: row.title,

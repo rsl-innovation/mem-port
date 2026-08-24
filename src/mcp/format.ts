@@ -52,6 +52,11 @@ export function captionOf(parts: Array<string | number | null | undefined>): str
     .join(" · ");
 }
 
+/** ADR-0007 — the human-facing form of the per-library sequence number. */
+export function formatAdrNumber(n: number): string {
+  return `ADR-${String(n).padStart(4, "0")}`;
+}
+
 export function formatScore(score: number): string {
   return `score ${score.toFixed(3)}`;
 }
@@ -61,8 +66,9 @@ export function formatTags(tags: string[] | undefined): string | undefined {
 }
 
 /**
- * SurrealDB hands back DateTime wrappers rather than Date objects, so go
- * through the same toJSON the text block already relies on before falling back.
+ * Timestamps arrive as ISO-8601 strings from the store layer, but this stays
+ * tolerant of anything date-like: older callers passed SurrealDB DateTime
+ * wrappers straight in, and the fallbacks cost nothing.
  */
 export function formatWhen(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;

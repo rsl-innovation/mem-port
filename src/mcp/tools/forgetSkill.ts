@@ -1,9 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StringRecordId, type Surreal } from "surrealdb";
 import { resolveLibrary } from "../resolveLibrary.js";
+import type { ServerDeps } from "../buildServer.js";
 
-export function registerForgetSkill(server: McpServer, root: Surreal): void {
+export function registerForgetSkill(server: McpServer, deps: ServerDeps): void {
   server.registerTool(
     "forget_skill",
     {
@@ -20,17 +20,16 @@ export function registerForgetSkill(server: McpServer, root: Surreal): void {
       },
     },
     async (args, extra) => {
-      const session = await resolveLibrary(extra, root);
-      const id = new StringRecordId(args.skill_id);
+      const store = await resolveLibrary(extra, deps.store);
 
       if (args.hard) {
-        await session.query(`DELETE $id`, { id });
+        await store.skills.remove(args.skill_id);
         return {
           content: [{ type: "text" as const, text: `Permanently deleted ${args.skill_id}` }],
         };
       }
 
-      await session.query(`UPDATE $id SET status = 'archived', updated_at = time::now()`, { id });
+      await store.skills.archive(args.skill_id);
       return {
         content: [{ type: "text" as const, text: `Archived ${args.skill_id}` }],
       };
