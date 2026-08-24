@@ -2,24 +2,47 @@
 
 ## Before the first deploy
 
-**1. A SurrealDB the service can reach.** Surreal Cloud, or SurrealDB on a VM.
-Must be 3.0+, reached over `ws://`/`wss://`, with a root- or namespace-level
-user. If it sits on a private address, keep the VPC annotations in
-[`cloudrun.yaml`](cloudrun.yaml); if it is public with TLS, remove them and use
-`wss://`.
+**1. A database the service can reach.** Either engine works — see
+[`../README.md`](../README.md) for the constraints on each.
 
-**2. The password as a secret.**
+*Cloud SQL for Postgres* is usually the lighter option here: managed, backed up,
+and pgvector is available. Create the instance, then enable the extension once:
 
 ```bash
-printf 'your-surrealdb-password' | gcloud secrets create mem-port-db-pass --data-file=-
-
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
-gcloud secrets add-iam-policy-binding mem-port-db-pass \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role=roles/secretmanager.secretAccessor
+gcloud sql instances create mem-port --database-version=POSTGRES_16 \
+  --tier=db-g1-small --region="$REGION"
+gcloud sql databases create memport --instance=mem-port
+# then, connected to that database:  CREATE EXTENSION vector;
 ```
 
-**3. Edit `MEM_PORT_DB_URL`** in [`cloudrun.yaml`](cloudrun.yaml) to point at it.
+Point mem-port at it with the commented `MEM_PORT_DB_URL` in
+[`cloudrun.yaml`](cloudrun.yaml) and add the `cloudsql-instances` annotation it
+describes. Cloud Run mounts a Unix socket for the instance, so nothing traverses
+the network.
+
+*SurrealDB* means Surreal Cloud or SurrealDB on a VM: 3.0+, over `ws://`/`wss://`,
+with a root- or namespace-level user. On a private address, keep the VPC
+annotations in `cloudrun.yaml`; if it is public with TLS, remove them and use
+`wss://`.
+
+**2. Two secrets.** The database password, and the bootstrap admin password —
+without the second the service will not start, because binding `0.0.0.0` makes
+authentication required.
+
+```bash
+printf 'your-database-password' | gcloud secrets create mem-port-db-pass --data-file=-
+printf 'your-admin-password'    | gcloud secrets create mem-port-admin-pass --data-file=-
+
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+for SECRET in mem-port-db-pass mem-port-admin-pass; do
+  gcloud secrets add-iam-policy-binding "$SECRET" \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role=roles/secretmanager.secretAccessor
+done
+```
+
+**3. Edit `MEM_PORT_DB_URL`** in [`cloudrun.yaml`](cloudrun.yaml) to point at your
+database.
 
 ## Deploy
 

@@ -49,6 +49,12 @@ services:
       # Per instance. With several replicas the cluster sees this many times
       # the replica count, so keep it modest.
       MEM_PORT_DB_MAX_SESSIONS: 64
+      # Binding 0.0.0.0 makes authentication required, so a deployment needs a
+      # first admin or the daemon refuses to start. Deliberately has no default:
+      # a shipped default password is exactly the kind of thing that survives
+      # into production. Set it in a .env beside this file, or export it.
+      MEM_PORT_ADMIN_USER: ${MEM_PORT_ADMIN_USER:-admin}
+      MEM_PORT_ADMIN_PASSWORD: ${MEM_PORT_ADMIN_PASSWORD:?set MEM_PORT_ADMIN_PASSWORD before starting (see deployments/README.md)}
     ports:
       # Loopback only. mem-port has NO authentication: anything that reaches
       # this port can read and write any library by naming it in the library-id

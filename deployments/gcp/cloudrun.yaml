@@ -96,3 +96,36 @@ spec:
             # runtime. Must match the Dockerfile.
             - name: MEM_PORT_MODEL_CACHE_DIR
               value: "/app/models"
+
+            # The URL the admin panel's Docs page tells clients to use. The
+            # Host header is correct when Cloud Run is reached directly, so
+            # this is only needed behind a load balancer or custom domain that
+            # rewrites it.
+            # - name: MEM_PORT_PUBLIC_URL
+            #   value: "https://mem-port.example.com"
+
+            # Binding 0.0.0.0 makes authentication required, so the service
+            # needs a first admin or it will not start. Used only while no
+            # admin exists, so leaving it set cannot reset a password later.
+            - name: MEM_PORT_ADMIN_USER
+              value: "admin"
+            - name: MEM_PORT_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mem-port-admin-pass
+                  key: latest
+
+            # --- Using Cloud SQL for Postgres instead of SurrealDB ---
+            #
+            # Often the lighter option on GCP: managed, backed up, and pgvector
+            # is available. Replace the four MEM_PORT_DB_* entries above with
+            # the single URL below, add the Cloud SQL instance annotation
+            #   run.googleapis.com/cloudsql-instances: PROJECT:REGION:INSTANCE
+            # to the template metadata, and enable pgvector once with
+            #   CREATE EXTENSION vector;
+            #
+            # The ?host= form points node-postgres at the Unix socket Cloud Run
+            # mounts for the instance, so nothing traverses the network.
+            #
+            # - name: MEM_PORT_DB_URL
+            #   value: "postgres://memport:PASSWORD@/memport?host=/cloudsql/PROJECT:REGION:INSTANCE"

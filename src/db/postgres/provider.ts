@@ -120,10 +120,22 @@ export class PostgresStoreProvider implements StoreProvider {
 async function loadPg(): Promise<{ Pool: new (config: unknown) => unknown }> {
   try {
     return (await import("pg")) as unknown as { Pool: new (config: unknown) => unknown };
-  } catch {
+  } catch (err) {
+    // Only a genuinely missing module means "not installed". Catching
+    // everything here once turned a bundler misconfiguration into a confident,
+    // wrong report that the package was absent — while it sat in node_modules,
+    // installed and importable. An error that misdiagnoses is worse than one
+    // that simply propagates.
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {
+      throw new Error(
+        'The Postgres driver needs the "pg" package, which is an optional dependency and is not installed. ' +
+          "Install it with: npm install pg"
+      );
+    }
     throw new Error(
-      'The Postgres driver needs the "pg" package, which is an optional dependency and is not installed. ' +
-        "Install it with: npm install pg"
+      `The "pg" package is installed but could not be loaded (${code ?? "unknown error"}): ` +
+        `${err instanceof Error ? err.message : String(err)}`
     );
   }
 }
