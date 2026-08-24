@@ -1,5 +1,6 @@
 import type { Config } from "../config.js";
 import type { StoreProvider } from "../interfaces/provider.interface.js";
+import { PostgresStoreProvider } from "./postgres/provider.js";
 import { SurrealStoreProvider } from "./surreal/provider.js";
 
 /**
@@ -13,8 +14,10 @@ export function createStoreProvider(config: Config): StoreProvider {
     case "surreal-embedded":
     case "surreal-remote":
       return new SurrealStoreProvider(config.store);
+    case "postgres":
+      return new PostgresStoreProvider(config.store);
     default: {
-      const driver: never = config.store.driver;
+      const driver: never = config.store;
       throw new Error(`Unknown store driver: ${String(driver)}`);
     }
   }

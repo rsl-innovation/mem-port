@@ -9,10 +9,13 @@ import path from "node:path";
  * another engine would add its own value here and its own branch in
  * `createStoreProvider`.
  */
-export type StoreDriver = "surreal-embedded" | "surreal-remote";
+export type StoreDriver = "surreal-embedded" | "surreal-remote" | "postgres";
+
+export type SurrealDriver = "surreal-embedded" | "surreal-remote";
 
 export interface SurrealStoreConfig {
-  driver: StoreDriver;
+  /** Narrowed rather than the full StoreDriver, so StoreConfig discriminates. */
+  driver: SurrealDriver;
   /** `surrealkv://<path>` for embedded, `ws://` or `wss://` for a hosted server. */
   url: string;
   namespace: string;
@@ -48,6 +51,20 @@ export interface AuthConfig {
   sessionTtlHours: number;
 }
 
+export interface PostgresStoreConfig {
+  driver: "postgres";
+  /** A libpq connection string, e.g. postgres://user:pass@host:5432/memport */
+  url: string;
+  /**
+   * Prefix for the per-workspace schema names, so several mem-port deployments
+   * can share one database without colliding.
+   */
+  schemaPrefix: string;
+  poolSize: number;
+}
+
+export type StoreConfig = SurrealStoreConfig | PostgresStoreConfig;
+
 export interface Config {
   port: number;
   /**
@@ -61,7 +78,7 @@ export interface Config {
   host: string;
   dataDir: string;
   embeddingModel: string;
-  store: SurrealStoreConfig;
+  store: StoreConfig;
   auth: AuthConfig;
 }
 
@@ -87,6 +104,7 @@ function schemeOf(url: string): string {
 
 const EMBEDDED_SCHEMES = new Set(["surrealkv", "rocksdb", "mem", "indxdb", "surrealkv+versioned"]);
 const REMOTE_SCHEMES = new Set(["ws", "wss"]);
+const POSTGRES_SCHEMES = new Set(["postgres", "postgresql"]);
 
 /**
  * Reject transports that cannot support how mem-port uses SurrealDB, at
@@ -119,18 +137,44 @@ function assertSupportedUrl(url: string, driver: StoreDriver): void {
   }
 }
 
-function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreConfig>): SurrealStoreConfig {
+function resolveStoreConfig(dataDir: string, overrides?: Partial<StoreConfig>): StoreConfig {
   const url =
     overrides?.url ?? process.env.MEM_PORT_DB_URL ?? `surrealkv://${path.join(dataDir, "memport.db")}`;
+
+  // A postgres:// URL selects the Postgres driver, the same way a ws:// URL
+  // selects remote SurrealDB: the scheme is the honest signal of what is on
+  // the other end, and MEM_PORT_STORE only exists to have a mismatch reported
+  // rather than inferred.
+  const scheme = schemeOf(url);
+  const declaredDriver = overrides?.driver ?? (process.env.MEM_PORT_STORE as StoreDriver | undefined);
+  if (declaredDriver === "postgres" || (!declaredDriver && POSTGRES_SCHEMES.has(scheme))) {
+    if (!POSTGRES_SCHEMES.has(scheme)) {
+      throw new Error(`Store driver "postgres" needs a postgres:// URL — got "${scheme}://".`);
+    }
+    const poolRaw = process.env.MEM_PORT_DB_POOL_SIZE;
+    const poolSize = poolRaw ? Number(poolRaw) : 10;
+    if (!Number.isInteger(poolSize) || poolSize < 1) {
+      throw new Error(`MEM_PORT_DB_POOL_SIZE must be a positive integer — got "${poolRaw}".`);
+    }
+    return {
+      driver: "postgres",
+      url,
+      schemaPrefix: process.env.MEM_PORT_DB_PREFIX ?? "",
+      poolSize,
+    };
+  }
 
   // The scheme is the honest signal of which driver is in play, so an explicit
   // MEM_PORT_STORE only has to exist for the case where someone wants the
   // mismatch reported rather than inferred.
-  const declared = overrides?.driver ?? (process.env.MEM_PORT_STORE as StoreDriver | undefined);
-  const driver: StoreDriver = declared ?? (REMOTE_SCHEMES.has(schemeOf(url)) ? "surreal-remote" : "surreal-embedded");
+  const driver = (declaredDriver ??
+    (REMOTE_SCHEMES.has(scheme) ? "surreal-remote" : "surreal-embedded")) as SurrealDriver;
   if (driver !== "surreal-embedded" && driver !== "surreal-remote") {
-    throw new Error(`Unknown MEM_PORT_STORE value "${driver}". Expected "surreal-embedded" or "surreal-remote".`);
+    throw new Error(
+      `Unknown MEM_PORT_STORE value "${driver}". Expected "surreal-embedded", "surreal-remote" or "postgres".`
+    );
   }
+  const surrealOverrides = overrides as Partial<SurrealStoreConfig> | undefined;
 
   assertSupportedUrl(url, driver);
 
@@ -145,7 +189,7 @@ function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreCon
     throw new Error("MEM_PORT_DB_USER is set without MEM_PORT_DB_PASS.");
   }
 
-  let auth = overrides?.auth;
+  let auth = surrealOverrides?.auth;
   if (!auth && token) {
     auth = { token };
   } else if (!auth && username && password) {
@@ -164,7 +208,7 @@ function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreCon
   }
 
   const maxSessionsRaw = process.env.MEM_PORT_DB_MAX_SESSIONS;
-  const maxSessions = overrides?.maxSessions ?? (maxSessionsRaw ? Number(maxSessionsRaw) : 256);
+  const maxSessions = surrealOverrides?.maxSessions ?? (maxSessionsRaw ? Number(maxSessionsRaw) : 256);
   if (!Number.isInteger(maxSessions) || maxSessions < 1) {
     throw new Error(`MEM_PORT_DB_MAX_SESSIONS must be a positive integer — got "${maxSessionsRaw}".`);
   }
@@ -172,9 +216,9 @@ function resolveStoreConfig(dataDir: string, overrides?: Partial<SurrealStoreCon
   return {
     driver,
     url,
-    namespace: overrides?.namespace ?? process.env.MEM_PORT_DB_NAMESPACE ?? "memport",
+    namespace: surrealOverrides?.namespace ?? process.env.MEM_PORT_DB_NAMESPACE ?? "memport",
     auth,
-    databasePrefix: overrides?.databasePrefix ?? process.env.MEM_PORT_DB_PREFIX ?? "",
+    databasePrefix: surrealOverrides?.databasePrefix ?? process.env.MEM_PORT_DB_PREFIX ?? "",
     maxSessions,
   };
 }
