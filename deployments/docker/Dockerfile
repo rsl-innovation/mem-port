@@ -38,6 +38,10 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# --omit=dev, but NOT --omit=optional: `pg` is optional and this keeps it in
+# the image, so one image serves both the SurrealDB and the Postgres stack.
+# It costs a few hundred KB in a layer that is cached anyway, and the
+# alternative is two images differing by one package.
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 

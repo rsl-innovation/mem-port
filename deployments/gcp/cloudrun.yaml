@@ -97,6 +97,13 @@ spec:
             - name: MEM_PORT_MODEL_CACHE_DIR
               value: "/app/models"
 
+            # The URL the admin panel's Docs page tells clients to use. The
+            # Host header is correct when Cloud Run is reached directly, so
+            # this is only needed behind a load balancer or custom domain that
+            # rewrites it.
+            # - name: MEM_PORT_PUBLIC_URL
+            #   value: "https://mem-port.example.com"
+
             # Binding 0.0.0.0 makes authentication required, so the service
             # needs a first admin or it will not start. Used only while no
             # admin exists, so leaving it set cannot reset a password later.
