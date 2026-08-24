@@ -13,8 +13,14 @@ export interface WorkspaceSnapshot {
   recent: { memories: Array<{ content: string; memory_type: string }>; skills: Array<{ name: string; description: string }> };
 }
 
-/** Nodes rendered in the graph. Beyond this the picture stops being readable. */
-const MAX_NODES = 36;
+/**
+ * Nodes rendered in the graph.
+ *
+ * A chord layout with rotated labels stays legible far longer than a ring with
+ * horizontal ones, but the ring's circumference is still finite: past roughly
+ * this many, labels start to crowd however they are rotated.
+ */
+const MAX_NODES = 48;
 
 /**
  * Read everything the page needs.
@@ -59,55 +65,87 @@ interface Node {
   id: string;
   name: string;
   weight: number;
+  /** Radians, measured from 12 o'clock. */
+  angle: number;
   x: number;
   y: number;
 }
 
 /**
- * Lay the graph out on a ring, most-connected first.
+ * Lay the graph out as a chord diagram: every entity on one ring, relations
+ * drawn as chords curving through the middle.
  *
- * A ring rather than a force simulation on purpose: force layout needs
- * JavaScript and many iterations to settle, and this page is server-rendered
- * with no client script. A ring is deterministic — the same workspace draws
- * identically every time, so the picture is comparable across visits rather
- * than rearranging itself on each reload.
+ * The obvious layout — nodes on a ring with straight lines between them and
+ * horizontal labels — falls apart past about a dozen entities, and it was worth
+ * seeing it fail to know why. Horizontal labels around a circle collide with
+ * their neighbours (a real workspace produced "inventoryficatibns-service" from
+ * two overlapping names), and straight edges through the centre turn into a
+ * hairball that shows connection density without showing any actual connection.
+ *
+ * Rotating each label to its own radius fixes the collisions outright: labels
+ * radiate outward like spokes, so neighbours can never overlap however many
+ * there are. Curving each edge toward the centre separates chords that would
+ * otherwise lie on top of each other, and reads as a constellation rather than
+ * a scribble.
+ *
+ * Still deterministic and still server-rendered — no force simulation, no
+ * client script, and the same workspace draws identically on every visit.
  */
-function layoutNodes(snapshot: WorkspaceSnapshot, w: number, h: number): Node[] {
+function layoutNodes(snapshot: WorkspaceSnapshot, cx: number, cy: number, radius: number): Node[] {
   const ranked = [...snapshot.entities]
     .map((e) => ({ e, weight: snapshot.mentionCounts.get(e.id) ?? 0 }))
     .sort((a, b) => b.weight - a.weight || a.e.name.localeCompare(b.e.name))
     .slice(0, MAX_NODES);
 
-  const cx = w / 2;
-  const cy = h / 2;
-  const radius = Math.min(w, h) * 0.37;
+  // Most-connected first, then alternating sides, so the busiest entities are
+  // spread around the ring instead of bunched into one arc.
+  const ordered: Array<{ e: (typeof ranked)[number]["e"]; weight: number }> = [];
+  ranked.forEach((item, i) => (i % 2 === 0 ? ordered.push(item) : ordered.unshift(item)));
 
-  return ranked.map(({ e, weight }, i) => {
-    const angle = (i / ranked.length) * Math.PI * 2 - Math.PI / 2;
-    // Two alternating radii so neighbouring labels do not collide on a dense ring.
-    const r = radius * (i % 2 === 0 ? 1 : 0.76);
+  return ordered.map((item, i) => {
+    const angle = (i / ordered.length) * Math.PI * 2 - Math.PI / 2;
     return {
-      id: e.id,
-      name: e.name,
-      weight,
-      x: cx + Math.cos(angle) * r,
-      y: cy + Math.sin(angle) * r,
+      id: item.e.id,
+      name: item.e.name,
+      weight: item.weight,
+      angle,
+      x: cx + Math.cos(angle) * radius,
+      y: cy + Math.sin(angle) * radius,
     };
   });
 }
 
 /**
- * The constellation: entities as points of light, relations as edges.
+ * The constellation: entities as points of light on a ring, relations as chords.
  *
- * This is the one place Stardust Teal is allowed — the design system reserves
- * it for exactly this node/edge system. Ember marks the most-connected entity,
- * as the single brightest point rather than a fill.
+ * This is the one place Stardust Teal is allowed — the design system reserves it
+ * for exactly this node/edge system. Ember marks the most-connected entity, as
+ * the single brightest point rather than a fill.
  */
+/** Longest label mem-port will draw before eliding. */
+const LABEL_MAX_CHARS = 22;
+/** Approximate advance width of IBM Plex Mono at 11px. */
+const LABEL_CHAR_PX = 6.4;
+
 function graphSvg(snapshot: WorkspaceSnapshot): string {
-  const W = 900;
-  const H = 460;
-  const nodes = layoutNodes(snapshot, W, H);
+  const radius = 210;
+  const nodes = layoutNodes(snapshot, 0, 0, radius);
   if (nodes.length === 0) return "";
+
+  // The box has to be sized from the LABELS, not the ring. Sizing it from the
+  // ring clipped the labels at 12 and 6 o'clock, where they run straight out of
+  // the box -- the entity at the bottom rendered as "checkout-ser".
+  const longest = Math.max(...nodes.map((n) => Math.min(n.name.length, LABEL_MAX_CHARS)));
+  const pad = Math.ceil(longest * LABEL_CHAR_PX) + 20;
+  const size = (radius + pad) * 2;
+  const cx = size / 2;
+  const cy = size / 2;
+  for (const n of nodes) {
+    n.x = cx + Math.cos(n.angle) * radius;
+    n.y = cy + Math.sin(n.angle) * radius;
+  }
+  const W = size;
+  const H = size;
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const maxWeight = Math.max(1, ...nodes.map((n) => n.weight));
@@ -116,43 +154,67 @@ function graphSvg(snapshot: WorkspaceSnapshot): string {
     .map((r) => ({ from: byId.get(r.fromId), to: byId.get(r.toId), type: r.relation_type }))
     .filter((e): e is { from: Node; to: Node; type: string } => Boolean(e.from && e.to));
 
+  /**
+   * Curve toward the centre, but not all the way: a control point exactly at
+   * the centre would make every chord pass through one pixel. Pulling it a
+   * fraction of the way out along the chord's own midpoint keeps neighbouring
+   * chords distinguishable.
+   */
   const edgeSvg = edges
-    .map(
-      (e) =>
-        `<line x1="${e.from.x.toFixed(1)}" y1="${e.from.y.toFixed(1)}" x2="${e.to.x.toFixed(1)}" y2="${e.to.y.toFixed(1)}"
-stroke="#6fe0c9" stroke-opacity=".38" stroke-width="1"><title>${esc(e.type)}</title></line>`
-    )
+    .map((e) => {
+      const mx = (e.from.x + e.to.x) / 2;
+      const my = (e.from.y + e.to.y) / 2;
+      const k = 0.42;
+      const qx = cx + (mx - cx) * k;
+      const qy = cy + (my - cy) * k;
+      return `<path d="M${e.from.x.toFixed(1)} ${e.from.y.toFixed(1)} Q${qx.toFixed(1)} ${qy.toFixed(1)} ${e.to.x.toFixed(
+        1
+      )} ${e.to.y.toFixed(1)}" fill="none" stroke="#6fe0c9" stroke-opacity=".30" stroke-width="1"
+><title>${esc(e.from.name)} ${esc(e.type)} ${esc(e.to.name)}</title></path>`;
+    })
     .join("");
 
   const nodeSvg = nodes
-    .map((n, i) => {
-      const scale = 3 + (n.weight / maxWeight) * 5;
-      const brightest = i === 0 && n.weight > 0;
+    .map((n) => {
+      const r = 3 + (n.weight / maxWeight) * 4.5;
+      const brightest = n.weight === maxWeight && maxWeight > 0;
       const colour = brightest ? "#f2a24c" : "#6fe0c9";
-      const labelAnchor = n.x > W / 2 ? "start" : "end";
-      const labelDx = n.x > W / 2 ? scale + 6 : -(scale + 6);
-      return `<g><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${scale.toFixed(1)}"
-fill="${colour}" opacity=".95"><title>${esc(n.name)} — mentioned by ${n.weight} record(s)</title></circle>
-<circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${(scale * 2.6).toFixed(1)}" fill="${colour}" opacity=".10"/>
-<text x="${(n.x + labelDx).toFixed(1)}" y="${(n.y + 4).toFixed(1)}" text-anchor="${labelAnchor}"
-fill="#b7b2ac" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="11">${esc(
-        n.name.length > 22 ? `${n.name.slice(0, 21)}…` : n.name
-      )}</text></g>`;
+      const deg = (n.angle * 180) / Math.PI;
+      // Past vertical the label would read upside-down, so flip it and anchor
+      // from the other end.
+      const flipped = Math.cos(n.angle) < 0;
+      const label = esc(n.name.length > LABEL_MAX_CHARS ? `${n.name.slice(0, LABEL_MAX_CHARS - 1)}…` : n.name);
+
+      return `<g transform="translate(${cx} ${cy}) rotate(${deg.toFixed(2)})">
+<circle cx="${radius}" cy="0" r="${(r * 2.8).toFixed(1)}" fill="${colour}" opacity=".10"/>
+<circle cx="${radius}" cy="0" r="${r.toFixed(1)}" fill="${colour}"><title>${esc(
+        n.name
+      )} — mentioned by ${n.weight} record(s)</title></circle>
+<text x="${flipped ? radius - 11 : radius + 11}" y="0" dy=".32em"
+ text-anchor="${flipped ? "end" : "start"}" transform="${flipped ? `rotate(180 ${radius} 0)` : ""}"
+ fill="${brightest ? "#f7b876" : "#b7b2ac"}" font-family="IBM Plex Mono, ui-monospace, monospace"
+ font-size="11">${label}</text></g>`;
     })
     .join("");
 
   const hidden = snapshot.entities.length - nodes.length;
 
-  return `<div class="panel" style="padding:0;overflow-x:auto">
-<svg viewBox="0 0 ${W} ${H}" width="100%" role="img"
+  // Centred at its natural size rather than stretched to the panel's width: a
+  // square diagram blown up to 1180px would push everything below it off the
+  // screen, and the labels are sized for 11px type, not for whatever scale the
+  // container happens to be.
+  // No panel and no background of its own: a constellation belongs on the void,
+  // and boxing it inside a raised card put a visible double frame around it.
+  return `<div style="overflow-x:auto;margin-bottom:1.5rem">
+<svg viewBox="0 0 ${W} ${H}" role="img"
  aria-label="Entity graph: ${nodes.length} entities and ${edges.length} relations"
- style="display:block;min-width:640px;background:#07060a;border-radius:10px">
+ style="display:block;width:100%;max-width:${W}px;margin:0 auto">
 ${edgeSvg}${nodeSvg}
 </svg></div>
 <p class="muted" style="margin-top:-.5rem;font-size:.875rem">
 ${nodes.length} of ${snapshot.entities.length} entities shown${
     hidden > 0 ? `, least-connected ${hidden} omitted for legibility` : ""
-  }. ${edges.length} relation${edges.length === 1 ? "" : "s"} drawn. Hover a point for its name.</p>`;
+  }. ${edges.length} relation${edges.length === 1 ? "" : "s"} drawn. Hover a point or a line for detail.</p>`;
 }
 
 export function explorePage(
