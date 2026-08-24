@@ -341,16 +341,39 @@ serves as the security boundary goes away — mem-port has no authentication of
 its own, so something else has to provide one. The supplied manifests default to
 closed for that reason.
 
-### Using a different database
+### Using Postgres instead
 
-Storage sits behind a contract in [`src/interfaces/`](src/interfaces/), expressed in domain terms — `store.skills.search(vector, filter)`, `store.entities.detail({ name })` — with no query language, record-id objects or graph syntax in it. SurrealDB is one implementation of that contract, confined entirely to `src/db/surreal/`; nothing under `src/mcp/`, `src/port/` or `src/services/` imports the driver.
+mem-port ships two storage drivers. The default is embedded SurrealDB, which
+needs nothing installed. The alternative is Postgres with
+[pgvector](https://github.com/pgvector/pgvector):
 
-To add another engine (Postgres with pgvector, say):
+```bash
+npm install pg                      # optional dependency, only for this driver
+MEM_PORT_DB_URL=postgres://user:pass@host:5432/memport mem-port serve
+```
+
+Each workspace gets its own Postgres schema, so isolation is structural rather
+than a `WHERE` clause. pgvector is required — every search mem-port offers is a
+cosine similarity over an embedding — and mem-port attempts `CREATE EXTENSION`
+itself, which works on most managed services where it is available but not
+enabled.
+
+The two drivers are interchangeable, and that is enforced rather than claimed:
+[`test/crossDriver.test.ts`](test/crossDriver.test.ts) seeds the same fixture
+through both and asserts every read tool returns **byte-identical** output.
+
+### Adding another database
+
+Storage sits behind a contract in [`src/interfaces/`](src/interfaces/), expressed in domain terms — `store.skills.search(vector, filter)`, `store.entities.detail({ name })` — with no query language, record-id objects or graph syntax in it. Each engine is confined to its own directory (`src/db/surreal/`, `src/db/postgres/`); nothing under `src/mcp/`, `src/port/` or `src/services/` imports a driver.
+
+To add one:
 
 1. Implement [`LibraryStore`](src/interfaces/store.interface.ts) and its seven sub-stores, plus [`StoreProvider`](src/interfaces/provider.interface.ts), under `src/db/<engine>/`.
 2. Add a case to [`createStoreProvider`](src/db/createStoreProvider.ts) and a driver value in [`src/config.ts`](src/config.ts).
 
-The contract's obligations are the parts worth reading twice: ids and timestamps cross the boundary as strings, unset optional fields stay absent rather than becoming `null`, `search` ranks by cosine similarity and excludes rows with no embedding, `entities.detail` answers a four-way fan-in without an N+1, and `transaction(fn)` must roll back on `Rollback` while still returning its payload. The existing end-to-end suite exercises all of it through the real tool surface, so a new driver is verified by pointing the tests at it.
+The obligations worth reading twice are the ones the Postgres driver had to be careful about: ids and timestamps cross the boundary as strings; **unset optional fields stay absent rather than becoming `null`** (SurrealDB returns `undefined`, Postgres returns an explicit null, and `JSON.stringify` treats them differently); `search` ranks by cosine similarity and excludes rows with no embedding; `entities.detail` answers a four-way fan-in without an N+1; and `transaction(fn)` rolls back on `Rollback` while still returning its payload.
+
+Point `crossDriver.test.ts` at a new driver and it will tell you whether the contract actually holds.
 
 ## Development
 
