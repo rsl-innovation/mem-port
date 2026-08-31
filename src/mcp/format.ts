@@ -13,14 +13,22 @@ export type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 const TRUTHY = new Set(["1", "on", "true", "yes"]);
 const FALSY = new Set(["0", "off", "false", "no"]);
 
+/** The header shapes both Node's http server and the MCP SDK hand us. */
+export type FlagHeaders = Record<string, string | string[] | undefined> | undefined;
+
 /**
- * A UI surface is on by default and turned off by a request header (per client)
- * or an environment variable (server wide). An explicit header wins over the
- * environment in both directions, so a single client can opt back in on a
- * daemon that has the surface switched off.
+ * A boolean flag set by a request header (per client) or an environment
+ * variable (server wide), falling back to `fallback` when neither says.
+ *
+ * An explicit header wins over the environment in both directions, so a single
+ * client can opt back in on a daemon that has a surface switched off.
+ *
+ * Takes raw headers rather than an `Extra` so it can also be called from the
+ * HTTP layer, before any MCP request context exists — which is where the
+ * read-only flag has to be read, since it decides which tools get registered.
  */
-export function surfaceEnabled(extra: Extra, header: string, envVars: string[]): boolean {
-  const raw = extra.requestInfo?.headers?.[header];
+export function headerFlag(headers: FlagHeaders, header: string, envVars: string[], fallback: boolean): boolean {
+  const raw = headers?.[header];
   const value = (Array.isArray(raw) ? raw[0] : raw)?.trim().toLowerCase();
   if (value) {
     if (FALSY.has(value)) return false;
@@ -33,7 +41,12 @@ export function surfaceEnabled(extra: Extra, header: string, envVars: string[]):
     if (env && TRUTHY.has(env)) return true;
   }
 
-  return true;
+  return fallback;
+}
+
+/** A UI surface is on unless a client header or the environment turns it off. */
+export function surfaceEnabled(extra: Extra, header: string, envVars: string[]): boolean {
+  return headerFlag(extra.requestInfo?.headers, header, envVars, true);
 }
 
 /** Text bindings need strings; anything absent is dropped rather than rendered as "null". */

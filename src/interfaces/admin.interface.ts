@@ -12,6 +12,23 @@ import type { Id, IsoDateTime } from "./common.interface.js";
  * describes mem-port's own account model, which every driver would share.
  */
 
+/**
+ * What a grant lets its holder do inside a workspace.
+ *
+ * "read" provisions only the read tools on the MCP endpoint; "write" provisions
+ * all of them. This is the first thing in the control plane that says anything
+ * about what happens *inside* a workspace — the rest of this layer decides only
+ * whether a request gets to open one — and it lives here rather than on
+ * `LibraryStore` because it is an account-model fact, not a knowledge-graph one.
+ */
+export type AccessLevel = "read" | "write";
+
+/** One workspace a user holds, and at what level. */
+export interface WorkspaceGrant {
+  workspace: string;
+  access: AccessLevel;
+}
+
 export interface User {
   id: Id;
   /** Login/display name, unique and case-folded. */
@@ -19,6 +36,15 @@ export interface User {
   /** Admins reach the admin panel; everyone else only holds keys. */
   isAdmin: boolean;
   disabled: boolean;
+  /**
+   * The level pre-selected when granting this user a workspace.
+   *
+   * A default, not a cap: a read-only member can still be given write on one
+   * particular workspace, deliberately and visibly. It exists so that adding
+   * someone who should mostly read does not depend on the admin remembering to
+   * change a dropdown on every grant.
+   */
+  defaultAccess: AccessLevel;
   createdAt: IsoDateTime;
   /** Present only for users who can sign in to the panel. */
   passwordHash?: string | null;
@@ -27,6 +53,7 @@ export interface User {
 export interface NewUser {
   username: string;
   isAdmin?: boolean;
+  defaultAccess?: AccessLevel;
   passwordHash?: string | null;
 }
 
@@ -60,8 +87,8 @@ export interface NewApiKey {
 export interface AuthenticatedKey {
   key: ApiKey;
   user: User;
-  /** Workspace ids this key's user may open. */
-  workspaces: string[];
+  /** Workspace ids this key's user may open, and at what level. */
+  workspaces: WorkspaceGrant[];
 }
 
 export interface Workspace {
@@ -94,6 +121,7 @@ export interface ControlPlaneStore {
   listUsers(): Promise<User[]>;
   setUserDisabled(id: Id, disabled: boolean): Promise<void>;
   setUserPassword(id: Id, passwordHash: string): Promise<void>;
+  setUserDefaultAccess(id: Id, access: AccessLevel): Promise<void>;
   deleteUser(id: Id): Promise<void>;
 
   createWorkspace(slug: string, description?: string): Promise<Workspace>;
@@ -111,9 +139,16 @@ export interface ControlPlaneStore {
   findKeyByKeyId(keyId: string): Promise<{ key: ApiKey; secretHash: string } | null>;
   touchKeyUsed(id: Id): Promise<void>;
 
-  grantWorkspace(userId: Id, workspaceSlug: string): Promise<void>;
+  /**
+   * Grant a workspace, or change the level of a grant already held.
+   *
+   * An upsert rather than an insert: the panel changes a member between
+   * read-only and read-write by re-granting, which keeps "give access" and
+   * "change access" on one code path instead of two that can disagree.
+   */
+  grantWorkspace(userId: Id, workspaceSlug: string, access: AccessLevel): Promise<void>;
   revokeWorkspace(userId: Id, workspaceSlug: string): Promise<void>;
-  listWorkspacesForUser(userId: Id): Promise<string[]>;
+  listWorkspacesForUser(userId: Id): Promise<WorkspaceGrant[]>;
 
   createSession(userId: Id, tokenHash: string, expiresAt: IsoDateTime): Promise<void>;
   findSession(tokenHash: string): Promise<{ userId: Id; expiresAt: IsoDateTime } | null>;

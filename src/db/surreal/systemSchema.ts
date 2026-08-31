@@ -17,6 +17,9 @@ export async function ensureSystemSchema(q: SurrealQueryable): Promise<void> {
     DEFINE FIELD IF NOT EXISTS is_admin      ON cp_user TYPE bool DEFAULT false;
     DEFINE FIELD IF NOT EXISTS disabled      ON cp_user TYPE bool DEFAULT false;
     DEFINE FIELD IF NOT EXISTS password_hash ON cp_user TYPE option<string>;
+    -- The level pre-selected when granting this user a workspace. 'write'
+    -- rather than 'read' so an upgraded deployment keeps behaving as it did.
+    DEFINE FIELD IF NOT EXISTS default_access ON cp_user TYPE string DEFAULT 'write';
     DEFINE FIELD IF NOT EXISTS created_at    ON cp_user TYPE datetime DEFAULT time::now();
     -- Usernames are the login identity, so collisions must be impossible
     -- rather than merely unlikely.
@@ -49,6 +52,11 @@ export async function ensureSystemSchema(q: SurrealQueryable): Promise<void> {
     DEFINE TABLE IF NOT EXISTS cp_grant SCHEMAFULL;
     DEFINE FIELD IF NOT EXISTS user       ON cp_grant TYPE record<cp_user>;
     DEFINE FIELD IF NOT EXISTS workspace  ON cp_grant TYPE string;
+    -- 'read' or 'write'. DEFAULT applies at creation, so grants written before
+    -- this field existed read back as NONE; the row mapper treats anything that
+    -- is not exactly 'read' as 'write', which is both the safe parse and the
+    -- behaviour those older grants already had.
+    DEFINE FIELD IF NOT EXISTS access     ON cp_grant TYPE string DEFAULT 'write';
     DEFINE FIELD IF NOT EXISTS created_at ON cp_grant TYPE datetime DEFAULT time::now();
     DEFINE INDEX IF NOT EXISTS cp_grant_pair_idx ON cp_grant FIELDS user, workspace UNIQUE;
 

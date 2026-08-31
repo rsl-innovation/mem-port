@@ -1,6 +1,7 @@
 import type { SurrealQueryable } from "surrealdb";
 import type { Id, IsoDateTime } from "../../interfaces/common.interface.js";
 import type {
+  AccessLevel,
   AdminSession,
   ApiKey,
   ControlPlaneStore,
@@ -8,8 +9,21 @@ import type {
   NewUser,
   User,
   Workspace,
+  WorkspaceGrant,
 } from "../../interfaces/admin.interface.js";
 import { fromIso, toId, toIso, toRecordId } from "./map.js";
+
+/**
+ * Read a stored access level.
+ *
+ * Anything that is not exactly "read" is "write" — which covers rows written
+ * before the field existed (SurrealDB applies DEFAULT at creation, so those
+ * read back as NONE) as well as a value corrupted by hand. Both cases resolve
+ * to the level those grants already behaved as, so an upgrade is invisible.
+ */
+function toAccess(value: unknown): AccessLevel {
+  return value === "read" ? "read" : "write";
+}
 
 interface UserRow {
   id: unknown;
@@ -17,6 +31,7 @@ interface UserRow {
   is_admin: boolean;
   disabled: boolean;
   password_hash?: string | null;
+  default_access?: unknown;
   created_at: unknown;
 }
 
@@ -53,12 +68,14 @@ export class SurrealControlPlaneStore implements ControlPlaneStore {
   async createUser(input: NewUser): Promise<User> {
     const [created] = await this.q.query<[UserRow[]]>(
       `CREATE cp_user CONTENT {
-         username: $username, is_admin: $is_admin, password_hash: $password_hash
+         username: $username, is_admin: $is_admin, password_hash: $password_hash,
+         default_access: $default_level
        }`,
       {
         username: normalizeUsername(input.username),
         is_admin: input.isAdmin ?? false,
         password_hash: input.passwordHash ?? undefined,
+        default_level: input.defaultAccess ?? "write",
       }
     );
     return toUser(created[0]);
@@ -87,6 +104,12 @@ export class SurrealControlPlaneStore implements ControlPlaneStore {
 
   async setUserPassword(id: Id, passwordHash: string): Promise<void> {
     await this.q.query(`UPDATE $id SET password_hash = $hash`, { id: toRecordId(id), hash: passwordHash });
+  }
+
+  async setUserDefaultAccess(id: Id, access: AccessLevel): Promise<void> {
+    // Bound as $level, not $access: SurrealDB reserves $access for DEFINE ACCESS
+    // and rejects the query outright if you bind that name.
+    await this.q.query(`UPDATE $id SET default_access = $level`, { id: toRecordId(id), level: access });
   }
 
   async deleteUser(id: Id): Promise<void> {
@@ -179,18 +202,23 @@ export class SurrealControlPlaneStore implements ControlPlaneStore {
 
   // --- grants ------------------------------------------------------------
 
-  async grantWorkspace(userId: Id, workspaceSlug: string): Promise<void> {
-    // The unique index on (user, workspace) makes a repeated grant a no-op
-    // rather than a duplicate row.
+  async grantWorkspace(userId: Id, workspaceSlug: string, access: AccessLevel): Promise<void> {
+    // Re-granting a workspace already held sets its level rather than creating
+    // a second row the unique index would reject: changing someone between
+    // read-only and read-write is the same operation as granting them.
     const [existing] = await this.q.query<[Array<{ id: unknown }>]>(
       `SELECT id FROM cp_grant WHERE user = $user AND workspace = $workspace LIMIT 1`,
       { user: toRecordId(userId), workspace: workspaceSlug }
     );
-    if (existing.length > 0) return;
+    if (existing.length > 0) {
+      await this.q.query(`UPDATE $id SET access = $level`, { id: existing[0].id, level: access });
+      return;
+    }
 
-    await this.q.query(`CREATE cp_grant CONTENT { user: $user, workspace: $workspace }`, {
+    await this.q.query(`CREATE cp_grant CONTENT { user: $user, workspace: $workspace, access: $level }`, {
       user: toRecordId(userId),
       workspace: workspaceSlug,
+      level: access,
     });
   }
 
@@ -201,12 +229,12 @@ export class SurrealControlPlaneStore implements ControlPlaneStore {
     });
   }
 
-  async listWorkspacesForUser(userId: Id): Promise<string[]> {
-    const [rows] = await this.q.query<[Array<{ workspace: string }>]>(
-      `SELECT workspace FROM cp_grant WHERE user = $user`,
+  async listWorkspacesForUser(userId: Id): Promise<WorkspaceGrant[]> {
+    const [rows] = await this.q.query<[Array<{ workspace: string; access?: unknown }>]>(
+      `SELECT workspace, access FROM cp_grant WHERE user = $user ORDER BY workspace ASC`,
       { user: toRecordId(userId) }
     );
-    return rows.map((row) => row.workspace);
+    return rows.map((row) => ({ workspace: row.workspace, access: toAccess(row.access) }));
   }
 
   // --- sessions ----------------------------------------------------------
@@ -247,6 +275,7 @@ function toUser(row: UserRow): User {
     username: row.username,
     isAdmin: row.is_admin,
     disabled: row.disabled,
+    defaultAccess: toAccess(row.default_access),
     passwordHash: row.password_hash,
     createdAt: toIso(row.created_at),
   };

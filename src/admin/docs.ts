@@ -75,6 +75,14 @@ revoke it and issue another.</div>
 <h3>3. Grant workspace access</h3>
 <p>A key opens nothing until its user is granted a workspace. Grant only what each person needs;
 revoking a grant takes effect on the very next request, without touching their key.</p>
+<p>Every grant is either <b>read-write</b> or <b>read-only</b>. A read-only grant provisions only the
+read tools on that member's connection — <code>save_</code>, <code>forget_</code> and
+<code>import_library</code> are not offered at all, so their copilot cannot write to the workspace
+even if it decides to try. Use it for people who should consult a curated library without adding to
+it. Each user also has a <em>default access</em> that pre-selects the level when you grant them a
+workspace; changing it does not touch grants they already hold.</p>
+<p class="muted">Switch a member between the two on their user page — the grant keeps its place and
+only the level changes. It takes effect on their very next request.</p>
 <div class="note"><strong>Being an admin is not access.</strong> Admins decide who may reach what,
 which is a different power from reading it — so a stolen admin password exposes this account model
 rather than every workspace's contents. To browse a workspace yourself, grant it to your own
@@ -85,6 +93,9 @@ account.</div>
 <pre><code>URL             ${o}/mcp
 Authorization   Bearer &lt;the key you issued&gt;
 library-id      &lt;the workspace you granted&gt;</code></pre>
+<p class="muted">A fourth header, <code>read-only: 1</code>, is optional and belongs to the client
+rather than to you: it makes that one client drop its own write tools. It can only ever remove
+access — a read-only grant stays read-only however the client is configured.</p>
 
 <h3>Claude Code</h3>
 <pre><code>claude mcp add --transport http mem-port ${o}/mcp \\
@@ -115,7 +126,9 @@ library-id      &lt;the workspace you granted&gt;</code></pre>
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
        "params":{"name":"list_skills","arguments":{}}}'</code></pre>
 <p class="muted">A <code>401</code> means the key is wrong, missing or revoked. A <code>403</code>
-means the key is fine but its user has no grant for that workspace.</p>
+means the key is fine but its user has no grant for that workspace. Swap
+<code>list_skills</code> for <code>tools/list</code> to see exactly which tools that key is being
+offered — ten for a read-only connection, nineteen for a read-write one.</p>
 
 <h3>Getting the copilot to actually use it</h3>
 <p>Clients call tools when the model decides to. mem-port ships instructions telling it to save
@@ -136,6 +149,7 @@ access. Grant the workspace to your own account first.</p>
 <tr><td>Revoke a key</td><td>That key stops working immediately. Other keys for the same user are unaffected.</td></tr>
 <tr><td>Rotate a key</td><td>Issue a new one, move the client onto it, then revoke the old one — in that order, so nothing is offline in between.</td></tr>
 <tr><td>Revoke a grant</td><td>The user's keys stop opening that workspace, and keep working elsewhere.</td></tr>
+<tr><td>Change a grant to read-only</td><td>Their next request is offered only the read tools. Nothing they already wrote is removed, and their keys keep working.</td></tr>
 <tr><td>Disable a user</td><td>Every key they hold stops working at once, without deleting anything.</td></tr>
 <tr><td>Delete a user</td><td>Removes them with their keys and grants. Records they wrote stay in the workspace.</td></tr>
 <tr><td>Delete a workspace</td><td>Removes it from this list and drops its grants. <b>Stored records are not deleted</b> — recreating the same name makes them reachable again.</td></tr>
@@ -146,7 +160,8 @@ access. Grant the workspace to your own account first.</p>
 <tr><th>Symptom</th><th>Cause</th></tr>
 <tr><td>Client reports 401</td><td>Key missing, mistyped or revoked. Issue a fresh one.</td></tr>
 <tr><td>Client reports 403</td><td>Key is valid but the workspace is not granted to its user — or the workspace name is misspelled. The two are deliberately indistinguishable from outside, so an unauthenticated caller cannot discover which workspaces exist.</td></tr>
-<tr><td>Copilot connects but never saves anything</td><td>The model is choosing not to call the tools. Add an instruction to the project's rules file.</td></tr>
+<tr><td>Copilot can read but has no save tools</td><td>The connection is read-only. Either the user's grant for that workspace is read-only, or the client is sending <code>read-only: 1</code> in its own config. Both must say read-write for the write tools to appear.</td></tr>
+<tr><td>Copilot connects but never saves anything</td><td>If the save tools <em>are</em> offered, the model is choosing not to call them. Add an instruction to the project's rules file.</td></tr>
 <tr><td>Searches return nothing</td><td>Nothing saved to <em>that</em> workspace yet. Check the Explore view, and check the client is sending the workspace you expect.</td></tr>
 <tr><td>Someone sees another team's memory</td><td>Two clients are sending the same <code>library-id</code>. Workspaces are isolated; a shared name is a shared workspace.</td></tr>
 </table></div>`,

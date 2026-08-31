@@ -311,13 +311,15 @@ export function exploreDeniedPage(admin: AdminView, slug: string, csrf: string, 
 <div class="note"><strong>Administering a workspace and reading it are separate.</strong>
 Being an admin lets you decide who may reach this workspace; it does not let you read what is in it.
 That separation is what keeps a stolen admin password from exposing every workspace's contents.</div>
-<div class="panel"><p style="margin-top:0">Grant it to yourself to explore it. The grant is visible on
-your user page like any other, and you can revoke it afterwards.</p>
+<div class="panel"><p style="margin-top:0">Grant yourself <strong>read-only</strong> access to explore it — enough to
+read the workspace, and not enough to change it. The grant is visible on your user page like any other, where you can
+raise it to read-write or revoke it afterwards.</p>
 <form method="post" action="/admin/users/${encodeURIComponent(userId)}/grants">
 <input type="hidden" name="csrf" value="${esc(csrf)}">
 <input type="hidden" name="workspace" value="${esc(slug)}">
+<input type="hidden" name="access" value="read">
 <input type="hidden" name="return_to" value="/admin/workspaces/${encodeURIComponent(slug)}/explore">
-<button>Grant myself access to ${esc(slug)}</button></form></div>`,
+<button>Grant myself read-only access to ${esc(slug)}</button></form></div>`,
     admin
   );
 }

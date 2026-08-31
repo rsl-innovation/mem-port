@@ -5,6 +5,71 @@
 | [`docker/`](docker/) | The container image, plus a Compose stack per database engine — [SurrealDB](docker/docker-compose.yml) or [Postgres](docker/docker-compose.postgres.yml) — run the way a real deployment does |
 | [`gcp/`](gcp/) | Cloud Run service definition and a deploy script |
 
+## How it fits together
+
+Everything below is one Node process plus one database. The load-bearing line is
+the storage contract in the middle: everything above it is written in domain
+terms, everything below it is one engine's dialect, and which engine you get is
+decided by nothing but the scheme of `MEM_PORT_DB_URL`.
+
+```mermaid
+flowchart TB
+    CC["Claude Code"]
+    IDE["IDE extension"]
+    ANY["any MCP client"]
+    ADMIN["operator's browser"]
+
+    subgraph daemon["mem-port daemon (one Node process)"]
+        direction TB
+        HTTP["HTTP layer<br/>POST /mcp · GET /admin"]
+        AUTH["authenticate<br/>API key → user → workspace grant"]
+        TOOLS["MCP tools<br/>save_memory · search_skills · save_adr · …"]
+        SVC["services and port<br/>skill upsert · ADR numbering · export/import"]
+        EMB["local embeddings<br/>all-MiniLM-L6-v2 via ONNX, in-process"]
+        CONTRACT{{"StoreProvider / LibraryStore<br/>src/interfaces — no query language here"}}
+    end
+
+    subgraph drivers["exactly one driver, chosen by the URL scheme"]
+        direction LR
+        SUR["src/db/surreal"]
+        PG["src/db/postgres"]
+    end
+
+    EMBEDDED[("embedded SurrealDB<br/>surrealkv:// file on local disk")]
+    HOSTED[("hosted SurrealDB 3.0+<br/>ws:// · wss://")]
+    POSTGRES[("Postgres + pgvector<br/>postgres://")]
+
+    CC --> HTTP
+    IDE --> HTTP
+    ANY --> HTTP
+    ADMIN --> HTTP
+    HTTP --> AUTH
+    AUTH --> TOOLS
+    TOOLS --> SVC
+    TOOLS -.->|"embed on write and on search"| EMB
+    SVC --> CONTRACT
+    CONTRACT --> SUR
+    CONTRACT --> PG
+    SUR --> EMBEDDED
+    SUR --> HOSTED
+    PG --> POSTGRES
+```
+
+Three things that diagram is trying to earn:
+
+- **Embeddings are in-process.** There is no vector service and no embedding
+  API; the ONNX model runs inside the daemon, which is why sizing is about CPU
+  and memory rather than about a second network hop, and why nothing you write
+  leaves the host.
+- **Tenancy is below the contract, not above it.** The `library-id` header names
+  a workspace, and the driver turns that into a whole database (SurrealDB) or a
+  whole schema (Postgres). Isolation is structural: a query names its own
+  workspace and cannot reach another's rows.
+- **The driver is the only thing that changes.** Swap the URL and nothing above
+  the contract moves — which is a claim
+  [`test/crossDriver.test.ts`](../test/crossDriver.test.ts) checks by running one
+  fixture through both engines and diffing every tool's output byte for byte.
+
 ## Read this first
 
 **Authentication follows exposure.** On loopback it is off, because the

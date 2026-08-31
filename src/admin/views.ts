@@ -1,4 +1,4 @@
-import type { ApiKey, User, Workspace } from "../interfaces/admin.interface.js";
+import type { AccessLevel, ApiKey, User, Workspace, WorkspaceGrant } from "../interfaces/admin.interface.js";
 import { THEME_CSS } from "./theme.js";
 
 /**
@@ -115,7 +115,11 @@ export function usersPage(
   const rows = users
     .map(
       (u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.id)}">${esc(u.username)}</a></td>
-<td>${u.isAdmin ? '<span class="pill">admin</span>' : ""} ${u.disabled ? '<span class="pill">disabled</span>' : ""}</td>
+<td>${u.isAdmin ? '<span class="pill">admin</span>' : ""} ${u.disabled ? '<span class="pill">disabled</span>' : ""} ${
+        // Only the unusual default is worth a pill; read-write is what everyone
+        // gets unless someone says otherwise, so labelling it adds noise.
+        u.defaultAccess === "read" ? '<span class="pill">read-only</span>' : ""
+      }</td>
 <td class="muted">${esc(u.createdAt.slice(0, 10))}</td></tr>`
     )
     .join("");
@@ -131,10 +135,14 @@ ${flash ? `<div class="note${flash.kind === "err" ? " bad" : ""}">${esc(flash.me
 <div><label for="un">Username</label><input id="un" name="username" placeholder="alice" required></div>
 <div><label for="pw">Panel password</label>
 <input id="pw" name="password" type="password" placeholder="Admins only" autocomplete="new-password"></div>
+<div><label for="da">Default access</label>
+<select id="da" name="access"><option value="write">read-write</option><option value="read">read-only</option></select></div>
 <div><label for="ia">Admin</label>
 <span style="display:flex;align-items:center;height:41px"><input id="ia" type="checkbox" name="is_admin" value="1"
  style="min-width:auto;width:18px;height:18px;accent-color:#f2a24c"></span></div>
-<button>Create user</button></form></div>
+<button>Create user</button></form>
+<p class="muted" style="margin-bottom:0">Default access decides the level pre-selected when you grant this person a
+workspace. Pick read-only for someone who should consult the team's memory without adding to it.</p></div>
 <div class="panel">${
       rows ? `<table><tr><th>User</th><th></th><th>Created</th></tr>${rows}</table>` : `<p class="empty">No users yet.</p>`
     }</div>`,
@@ -142,11 +150,16 @@ ${flash ? `<div class="note${flash.kind === "err" ? " bad" : ""}">${esc(flash.me
   );
 }
 
+/** How a level is named to an admin. "read" is jargon; "read-only" is the feature. */
+function accessLabel(access: AccessLevel): string {
+  return access === "read" ? "read-only" : "read-write";
+}
+
 export function userPage(
   admin: AdminView,
   user: User,
   keys: ApiKey[],
-  grants: string[],
+  grants: WorkspaceGrant[],
   workspaces: Workspace[],
   opts: { revealedKey?: string; flash?: { kind: "ok" | "err"; message: string } } = {}
 ): string {
@@ -166,17 +179,34 @@ ${csrf}<input type="hidden" name="key_id" value="${esc(k.id)}"><button class="li
     .join("");
 
   const grantRows = grants
-    .map(
-      (slug) => `<tr><td><code>${esc(slug)}</code></td>
+    .map((g) => {
+      // Changing a level re-posts to /grants, which upserts. One route serves
+      // "grant" and "change level" so the two cannot drift apart.
+      const flipped: AccessLevel = g.access === "read" ? "write" : "read";
+      return `<tr><td><code>${esc(g.workspace)}</code></td>
+<td><span class="pill">${esc(accessLabel(g.access))}</span></td>
+<td><form method="post" action="/admin/users/${encodeURIComponent(user.id)}/grants" class="inline">
+${csrf}<input type="hidden" name="workspace" value="${esc(g.workspace)}">
+<input type="hidden" name="access" value="${flipped}">
+<button class="link">Make ${esc(accessLabel(flipped))}</button></form></td>
 <td><form method="post" action="/admin/users/${encodeURIComponent(user.id)}/grants/revoke" class="inline">
-${csrf}<input type="hidden" name="workspace" value="${esc(slug)}"><button class="link">Revoke</button></form></td></tr>`
-    )
+${csrf}<input type="hidden" name="workspace" value="${esc(g.workspace)}"><button class="link">Revoke</button></form></td></tr>`;
+    })
     .join("");
 
+  const held = new Set(grants.map((g) => g.workspace));
   const options = workspaces
-    .filter((w) => !grants.includes(w.slug))
+    .filter((w) => !held.has(w.slug))
     .map((w) => `<option value="${esc(w.slug)}">${esc(w.slug)}</option>`)
     .join("");
+
+  const accessOptions = (selected: AccessLevel): string =>
+    (["write", "read"] as const)
+      .map(
+        (level) =>
+          `<option value="${level}"${level === selected ? " selected" : ""}>${esc(accessLabel(level))}</option>`
+      )
+      .join("");
 
   return layout(
     user.username,
@@ -212,20 +242,30 @@ ${
 ${
   options
     ? `<form method="post" action="/admin/users/${encodeURIComponent(user.id)}/grants" class="row">
-${csrf}<select name="workspace" required>${options}</select><button>Grant access</button></form>`
+${csrf}<select name="workspace" required>${options}</select>
+<select name="access">${accessOptions(user.defaultAccess)}</select><button>Grant access</button></form>`
     : `<p class="muted">${
         workspaces.length ? "Every workspace is already granted." : "No workspaces exist yet."
       }</p>`
 }
 ${
   grantRows
-    ? `<table style="margin-top:16px"><tr><th>Workspace</th><th></th></tr>${grantRows}</table>`
+    ? `<table style="margin-top:16px"><tr><th>Workspace</th><th>Access</th><th></th><th></th></tr>${grantRows}</table>
+<p class="muted" style="margin-bottom:0">A read-only grant provisions only the read tools on this user's MCP
+connection — <code>save_</code> and <code>forget_</code> are not offered at all, so their copilot cannot write to the
+workspace even if it tries.</p>`
     : `<p class="empty">No access granted. This user's keys cannot reach anything yet.</p>`
 }
 </div>
 
 <h2>Account</h2>
 <div class="panel">
+<form method="post" action="/admin/users/${encodeURIComponent(user.id)}/access" class="row">
+${csrf}<label class="muted" for="default_access">Default for new grants</label>
+<select id="default_access" name="access">${accessOptions(user.defaultAccess)}</select>
+<button>Save</button></form>
+<p class="muted">Pre-selects the level when granting this user a workspace. Existing grants keep the level they
+were given.</p>
 <form method="post" action="/admin/users/${encodeURIComponent(user.id)}/password" class="row">
 ${csrf}<input name="password" type="password" placeholder="Set panel password" autocomplete="new-password" required>
 <button>Update password</button></form>
@@ -243,7 +283,10 @@ ${csrf}<button class="link">Delete user</button></form></p>
 
 <h2>Client setup</h2>
 <div class="panel"><p class="muted">Point an MCP client at this daemon with the user's key and one workspace:</p>
-<code>Authorization: Bearer &lt;the key above&gt;<br>library-id: &lt;workspace&gt;</code></div>`,
+<code>Authorization: Bearer &lt;the key above&gt;<br>library-id: &lt;workspace&gt;</code>
+<p class="muted" style="margin-bottom:0">A client can add <code>read-only: 1</code> alongside those to drop its own
+write tools — useful for a CI job or a shared machine. It only ever removes access: a read-only grant stays read-only
+however the client is configured.</p></div>`,
     admin
   );
 }
