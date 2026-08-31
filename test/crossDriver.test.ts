@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Server } from "node:http";
 import { startDaemon } from "../src/daemon.js";
-import { closeRootConnection } from "../src/db/connection.js";
+import { closeRootConnection, getStoreProvider } from "../src/db/connection.js";
+import { resolveConfig } from "../src/config.js";
 
 /**
  * The same fixture, through both drivers, compared byte for byte.
@@ -181,6 +182,60 @@ async function runDriver(port: number, env: Record<string, string | undefined>):
   }
 }
 
+/**
+ * The control-plane grant sequence, run against one driver.
+ *
+ * Separate from runDriver because it exercises ControlPlaneStore directly
+ * rather than the MCP endpoint: grants are the layer *above* LibraryStore, and
+ * the two implementations of them have to move together or a Postgres
+ * deployment quietly hands out the wrong access.
+ */
+async function runControlPlane(env: Record<string, string | undefined>): Promise<unknown[]> {
+  const saved: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(env)) {
+    saved[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+
+  const dataDir = await mkdtemp(path.join(tmpdir(), "mem-port-cross-cp-"));
+  try {
+    const cp = await getStoreProvider(resolveConfig({ dataDir })).getControlPlane();
+    const out: unknown[] = [];
+
+    const writer = await cp.createUser({ username: "cd-writer" });
+    const reader = await cp.createUser({ username: "cd-reader", defaultAccess: "read" });
+    out.push(writer.defaultAccess, reader.defaultAccess);
+
+    await cp.grantWorkspace(writer.id, "cd-alpha", "write");
+    await cp.grantWorkspace(reader.id, "cd-alpha", "read");
+    await cp.grantWorkspace(reader.id, "cd-beta", "write");
+    out.push(await cp.listWorkspacesForUser(writer.id), await cp.listWorkspacesForUser(reader.id));
+
+    // Re-granting upserts the level rather than duplicating the row.
+    await cp.grantWorkspace(reader.id, "cd-alpha", "write");
+    await cp.grantWorkspace(reader.id, "cd-beta", "read");
+    out.push(await cp.listWorkspacesForUser(reader.id));
+
+    // The user default is independent of the grants already held.
+    await cp.setUserDefaultAccess(reader.id, "write");
+    out.push((await cp.getUserByUsername("cd-reader"))?.defaultAccess);
+    out.push(await cp.listWorkspacesForUser(reader.id));
+
+    await cp.revokeWorkspace(reader.id, "cd-alpha");
+    out.push(await cp.listWorkspacesForUser(reader.id));
+
+    return out;
+  } finally {
+    await closeRootConnection();
+    await rm(dataDir, { recursive: true, force: true });
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
 let container = false;
 
 beforeAll(() => {
@@ -222,5 +277,32 @@ describe.skipIf(!hasDocker)("SurrealDB and Postgres are interchangeable", () => 
     for (const [i, [tool, args]] of READS.entries()) {
       expect(postgres[i], `${tool} ${JSON.stringify(args)} differs between drivers`).toBe(surreal[i]);
     }
+  }, 300_000);
+
+  it("grant read/write levels behave identically in both control planes", async () => {
+    const surreal = await runControlPlane({ MEM_PORT_DB_URL: undefined, MEM_PORT_STORE: undefined });
+    const postgres = await runControlPlane({ MEM_PORT_DB_URL: PG_URL, MEM_PORT_STORE: undefined });
+
+    expect(postgres).toEqual(surreal);
+    // Pinned, so a change that breaks both drivers the same way still fails.
+    expect(surreal).toEqual([
+      "write",
+      "read",
+      [{ workspace: "cd-alpha", access: "write" }],
+      [
+        { workspace: "cd-alpha", access: "read" },
+        { workspace: "cd-beta", access: "write" },
+      ],
+      [
+        { workspace: "cd-alpha", access: "write" },
+        { workspace: "cd-beta", access: "read" },
+      ],
+      "write",
+      [
+        { workspace: "cd-alpha", access: "write" },
+        { workspace: "cd-beta", access: "read" },
+      ],
+      [{ workspace: "cd-beta", access: "read" }],
+    ]);
   }, 300_000);
 });

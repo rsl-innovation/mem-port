@@ -18,6 +18,8 @@ export async function ensureSystemSchema(q: Queryable, schema: string): Promise<
       is_admin      boolean NOT NULL DEFAULT false,
       disabled      boolean NOT NULL DEFAULT false,
       password_hash text,
+      -- The level pre-selected when granting this user a workspace.
+      default_access text NOT NULL DEFAULT 'write',
       created_at    timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS cp_user_name_idx ON ${s}.cp_user (username);
@@ -49,6 +51,8 @@ export async function ensureSystemSchema(q: Queryable, schema: string): Promise<
       id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id    uuid NOT NULL REFERENCES ${s}.cp_user(id) ON DELETE CASCADE,
       workspace  text NOT NULL,
+      -- 'read' or 'write' -- what the holder may do inside the workspace.
+      access     text NOT NULL DEFAULT 'write',
       created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE UNIQUE INDEX IF NOT EXISTS cp_grant_pair_idx ON ${s}.cp_grant (user_id, workspace);
@@ -60,5 +64,15 @@ export async function ensureSystemSchema(q: Queryable, schema: string): Promise<
       expires_at timestamptz NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS cp_session_token_idx ON ${s}.cp_session (token_hash);
+  `);
+
+  // Columns added after the tables above already existed somewhere. CREATE
+  // TABLE IF NOT EXISTS will not add a column to a table it skipped, so these
+  // have to be separate ALTERs. Defaulting to 'write' backfills every existing
+  // row with the access it effectively already had, so upgrading changes
+  // nothing until an admin says otherwise.
+  await q.query(`
+    ALTER TABLE ${s}.cp_grant ADD COLUMN IF NOT EXISTS access text NOT NULL DEFAULT 'write';
+    ALTER TABLE ${s}.cp_user ADD COLUMN IF NOT EXISTS default_access text NOT NULL DEFAULT 'write';
   `);
 }

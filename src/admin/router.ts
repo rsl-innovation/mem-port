@@ -1,6 +1,6 @@
 import type http from "node:http";
 import type { AuthConfig } from "../config.js";
-import type { ControlPlaneStore } from "../interfaces/admin.interface.js";
+import type { AccessLevel, ControlPlaneStore } from "../interfaces/admin.interface.js";
 import type { StoreProvider } from "../interfaces/provider.interface.js";
 import { hashPassword, issueKey, verifyPassword } from "../auth/secrets.js";
 import { isReservedLibraryId } from "../db/libraryId.js";
@@ -136,8 +136,9 @@ async function route(
     // Reading a workspace needs a grant, exactly as it would for an API key.
     // An admin who wants to browse grants it to themselves -- see
     // exploreDeniedPage for why that is the rule rather than an inconvenience.
+    // Reading is what a `read` grant is for, so either level opens this page.
     const granted = await cp.listWorkspacesForUser(admin.user.id);
-    if (!granted.includes(slug)) {
+    if (!granted.some((g) => g.workspace === slug)) {
       return html(res, 403, exploreDeniedPage(admin, slug, admin.csrf, admin.user.id));
     }
 
@@ -194,6 +195,7 @@ async function route(
       const user = await cp.createUser({
         username,
         isAdmin,
+        defaultAccess: parseAccess(form.get("access")) ?? "write",
         passwordHash: password ? await hashPassword(password) : undefined,
       });
       return redirect(res, `${ADMIN_PREFIX}/users/${encodeURIComponent(user.id)}`);
@@ -244,7 +246,13 @@ async function route(
         }
         case "/grants": {
           const workspace = (form.get("workspace") ?? "").trim();
-          if (workspace) await cp.grantWorkspace(userId, workspace);
+          // Falls back to the user's own default rather than to "write", so a
+          // form that somehow arrives without a level cannot quietly hand out
+          // more access than the admin configured for this person.
+          const access = parseAccess(form.get("access")) ?? user.defaultAccess;
+          // Re-granting a workspace already held changes its level, which is
+          // how the "Make read-only" / "Make read-write" buttons work.
+          if (workspace) await cp.grantWorkspace(userId, workspace, access);
 
           // The explore view sends the admin here to grant themselves access;
           // returning them to the page they wanted saves a confusing detour
@@ -253,7 +261,23 @@ async function route(
           if (returnTo && returnTo.startsWith(`${ADMIN_PREFIX}/`)) {
             return redirect(res, returnTo);
           }
-          return render({ flash: { kind: "ok", message: `Granted access to "${workspace}".` } });
+          return render({
+            flash: { kind: "ok", message: `Granted ${describeAccess(access)} access to "${workspace}".` },
+          });
+        }
+        case "/access": {
+          const access = parseAccess(form.get("access"));
+          if (!access) return render({ flash: { kind: "err", message: "Pick read-only or read-write." } });
+          await cp.setUserDefaultAccess(userId, access);
+          // Deliberately does not touch existing grants: this is the level new
+          // grants start at, and silently re-levelling workspaces someone
+          // already holds would be a much larger action than the form suggests.
+          return render({
+            flash: {
+              kind: "ok",
+              message: `New grants will default to ${describeAccess(access)}. Existing grants are unchanged.`,
+            },
+          });
         }
         case "/grants/revoke": {
           await cp.revokeWorkspace(userId, form.get("workspace") ?? "");
@@ -286,6 +310,20 @@ async function route(
   }
 
   return html(res, 404, errorPage(404, "Not found"));
+}
+
+/**
+ * An access level from a form field, or undefined if the field said anything
+ * else. Never guesses — each caller decides what an absent level should mean.
+ */
+function parseAccess(value: string | null): AccessLevel | undefined {
+  if (value === "read" || value === "write") return value;
+  return undefined;
+}
+
+/** How a level is named to an admin: the panel says read-only, not "read". */
+function describeAccess(access: AccessLevel): string {
+  return access === "read" ? "read-only" : "read-write";
 }
 
 async function validateWorkspaceSlug(cp: ControlPlaneStore, slug: string): Promise<string | undefined> {

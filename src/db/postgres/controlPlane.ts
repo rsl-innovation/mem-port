@@ -1,14 +1,21 @@
 import type { Id, IsoDateTime } from "../../interfaces/common.interface.js";
 import type {
+  AccessLevel,
   ApiKey,
   ControlPlaneStore,
   NewApiKey,
   NewUser,
   User,
   Workspace,
+  WorkspaceGrant,
 } from "../../interfaces/admin.interface.js";
 import { fromNullable, toId, toIso, toOptionalIso, toUuid } from "./map.js";
 import type { Queryable } from "./queryable.js";
+
+/** Anything that is not exactly "read" is "write" — see the SurrealDB twin. */
+function toAccess(value: unknown): AccessLevel {
+  return value === "read" ? "read" : "write";
+}
 
 export class PostgresControlPlaneStore implements ControlPlaneStore {
   constructor(
@@ -25,9 +32,14 @@ export class PostgresControlPlaneStore implements ControlPlaneStore {
 
   async createUser(input: NewUser): Promise<User> {
     const { rows } = await this.q.query<Record<string, unknown>>(
-      `INSERT INTO ${this.s}.cp_user (username, is_admin, password_hash)
-       VALUES ($1, $2, $3) RETURNING *`,
-      [normalizeUsername(input.username), input.isAdmin ?? false, input.passwordHash ?? null]
+      `INSERT INTO ${this.s}.cp_user (username, is_admin, password_hash, default_access)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [
+        normalizeUsername(input.username),
+        input.isAdmin ?? false,
+        input.passwordHash ?? null,
+        input.defaultAccess ?? "write",
+      ]
     );
     return toUser(rows[0]);
   }
@@ -62,6 +74,10 @@ export class PostgresControlPlaneStore implements ControlPlaneStore {
 
   async setUserPassword(id: Id, passwordHash: string): Promise<void> {
     await this.q.query(`UPDATE ${this.s}.cp_user SET password_hash = $1 WHERE id = $2`, [passwordHash, toUuid(id)]);
+  }
+
+  async setUserDefaultAccess(id: Id, access: AccessLevel): Promise<void> {
+    await this.q.query(`UPDATE ${this.s}.cp_user SET default_access = $1 WHERE id = $2`, [access, toUuid(id)]);
   }
 
   async deleteUser(id: Id): Promise<void> {
@@ -144,11 +160,13 @@ export class PostgresControlPlaneStore implements ControlPlaneStore {
 
   // --- grants ------------------------------------------------------------
 
-  async grantWorkspace(userId: Id, workspaceSlug: string): Promise<void> {
+  async grantWorkspace(userId: Id, workspaceSlug: string, access: AccessLevel): Promise<void> {
+    // Re-granting sets the level rather than doing nothing: changing someone
+    // between read-only and read-write is the same operation as granting them.
     await this.q.query(
-      `INSERT INTO ${this.s}.cp_grant (user_id, workspace) VALUES ($1, $2)
-       ON CONFLICT (user_id, workspace) DO NOTHING`,
-      [toUuid(userId), workspaceSlug]
+      `INSERT INTO ${this.s}.cp_grant (user_id, workspace, access) VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, workspace) DO UPDATE SET access = EXCLUDED.access`,
+      [toUuid(userId), workspaceSlug, access]
     );
   }
 
@@ -159,12 +177,12 @@ export class PostgresControlPlaneStore implements ControlPlaneStore {
     ]);
   }
 
-  async listWorkspacesForUser(userId: Id): Promise<string[]> {
-    const { rows } = await this.q.query<{ workspace: string }>(
-      `SELECT workspace FROM ${this.s}.cp_grant WHERE user_id = $1`,
+  async listWorkspacesForUser(userId: Id): Promise<WorkspaceGrant[]> {
+    const { rows } = await this.q.query<{ workspace: string; access: string }>(
+      `SELECT workspace, access FROM ${this.s}.cp_grant WHERE user_id = $1 ORDER BY workspace ASC`,
       [toUuid(userId)]
     );
-    return rows.map((r) => r.workspace);
+    return rows.map((r) => ({ workspace: r.workspace, access: toAccess(r.access) }));
   }
 
   // --- sessions ----------------------------------------------------------
@@ -204,6 +222,7 @@ function toUser(r: Record<string, unknown>): User {
     username: r.username as string,
     isAdmin: r.is_admin as boolean,
     disabled: r.disabled as boolean,
+    defaultAccess: toAccess(r.default_access),
     passwordHash: fromNullable(r.password_hash as string | null),
     createdAt: toIso(r.created_at),
   };

@@ -107,6 +107,26 @@ describe("mcp apps", () => {
     }
   }, 60_000);
 
+  it("honours a client's own read-only header on a daemon with auth off", async () => {
+    // No control plane here, so no grants: the client's own header is the only
+    // thing that can narrow the tool set, and it must still work.
+    const all = (await rpc("tools/list", {})).tools.map((t: any) => t.name);
+    expect(all).toContain("save_memory");
+
+    const readOnly = (await rpc("tools/list", {}, { "read-only": "1" })).tools.map((t: any) => t.name);
+    expect(readOnly).not.toContain("save_memory");
+    expect(readOnly).not.toContain("import_library");
+    // export_library only reads the library, so it stays.
+    expect(readOnly).toContain("export_library");
+    expect(readOnly).toContain("search_memory");
+
+    // The read tools keep their MCP Apps declaration when write tools are gone.
+    const entry = (await rpc("tools/list", {}, { "read-only": "1" })).tools.find(
+      (t: any) => t.name === "list_skills"
+    );
+    expect(entry?._meta?.ui?.resourceUri).toBe(APP_URI);
+  }, 60_000);
+
   it("serves the app as a self-contained page under the MCP Apps mime type", async () => {
     const { resources } = await rpc("resources/list", {});
     const entry = resources.find((r: any) => r.uri === APP_URI);

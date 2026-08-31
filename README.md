@@ -112,6 +112,36 @@ Connecting the server gives your copilot the *ability* to save/recall memory —
 | `export_library` | Export this library to a portable `.memport.json` bundle |
 | `import_library` | Import a `.memport.json` bundle, merging or overwriting |
 
+### Read-only connections
+
+Ten of those tools only read: `search_memory`, `list_episodes`, `get_entity`, `search_skills`, `list_skills`, `get_skill`, `search_adrs`, `list_adrs`, `get_adr` and `export_library`. The other nine can change the library.
+
+A connection can be limited to the read half, and the write tools are then **not registered at all** — a `tools/call` for `save_memory` comes back as an unknown tool, because the server built for that request never had it. Two independent things can ask for this, and the more restrictive wins:
+
+```
+grant is read-only   ──▶ read-only, always  (set by an admin; the member cannot opt out)
+read-only: 1 header  ──▶ read-only          (set by the client, on itself)
+otherwise            ──▶ read-write
+```
+
+**Per member.** With [authentication](#authentication-and-the-admin-panel) on, every workspace grant in the admin panel is read-write or read-only. This is the one to reach for when someone should consult a curated library without adding to it — their copilot is never offered the tools, so it cannot write to the workspace even if it decides to.
+
+**Per client.** Any client can drop its own write tools with a `read-only: 1` header next to `library-id`, the same way `mcp-apps: 0` turns off rendered results:
+
+```json
+{
+  "mcpServers": {
+    "mem-port": {
+      "type": "http",
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": { "library-id": "my-personal-workspace", "read-only": "1" }
+    }
+  }
+}
+```
+
+That is useful for a CI job, a shared machine, or a copilot you would rather kept its hands off a library you curate by hand. It can only ever remove tools: a read-only grant stays read-only however the client is configured, and there is no environment variable that turns the whole daemon read-only — with `MEM_PORT_AUTH=off` there are no grants at all, so the header is the only thing in play.
+
 ### Rendered results (MCP Apps)
 
 The nine read tools — `search_memory`, `list_episodes`, `search_skills`, `list_skills`, `get_skill`, `search_adrs`, `list_adrs`, `get_adr`, `get_entity` — render their results as cards in hosts that support [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview), instead of showing you the JSON your copilot reads. Lists come back as result cards; `get_*` as a detail view.
@@ -308,7 +338,11 @@ admin exists) and from there:
   name is what clients send as `library-id`
 - **create users**, and issue each an API key (shown once; only a hash is kept)
   with revocation when a key needs rotating
-- **grant a user access to specific workspaces**
+- **grant a user access to specific workspaces**, each grant read-write or
+  read-only — a read-only member is served only the ten read tools, so their
+  copilot has no way to write to that workspace (see
+  [Read-only connections](#read-only-connections)). Each user also carries a
+  default level that pre-selects the choice when you grant them a workspace.
 - **explore a workspace's graph** — a read-only view of what a workspace holds
   and how its entities connect, which is the quickest way to check whether a
   newly connected client is actually writing anything
@@ -323,6 +357,9 @@ Clients then send two headers, and nothing else changes:
 Authorization: Bearer <the user's key>
 library-id: <a workspace they were granted>
 ```
+
+Upgrading an existing deployment changes nothing on its own: grants that predate
+this keep read-write access until an admin says otherwise.
 
 Being an admin does not confer data access — admins decide who may reach what,
 which is a different power from reading it, so an admin who wants a workspace

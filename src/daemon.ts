@@ -9,6 +9,7 @@ import { ADMIN_PREFIX, handleAdminRequest } from "./admin/router.js";
 import { closeRootConnection, getStoreProvider } from "./db/connection.js";
 import type { StoreProvider } from "./interfaces/provider.interface.js";
 import { buildServer, type ServerDeps } from "./mcp/buildServer.js";
+import { readOnlyRequested } from "./mcp/readOnly.js";
 import { LocalEmbeddingProvider } from "./embeddings/localProvider.js";
 
 const MCP_PATH = "/mcp";
@@ -105,47 +106,67 @@ export async function startDaemon(overrides: Partial<Config> = {}): Promise<http
   return httpServer;
 }
 
+/** What the door decided: turn the request away, or let it in at some level. */
+type Admission = { ok: false; failure: AuthFailure } | { ok: true; readOnly: boolean };
+
 /**
- * Reject a request before any tool runs.
+ * Decide whether a request runs at all, and with which tools, before any tool runs.
  *
  * Authorization happens here rather than inside the tool handlers because a
  * request carries exactly one library-id header, so the whole request is
  * already scoped to one workspace. Checking once at the door means no handler
- * can be added later that forgets to check.
+ * can be added later that forgets to check — and the same applies to the
+ * read/write level, which is why it is resolved here and handed to
+ * `buildServer` rather than consulted tool by tool.
+ *
+ * Two independent sources can make a request read-only, and the more
+ * restrictive wins: the member's grant (authoritative, set by an admin) and the
+ * client's own `read-only` header (voluntary, set where the client is
+ * configured). A client can therefore drop privileges it holds, and can never
+ * claim any it does not.
  */
-async function denyRequest(
+async function admitRequest(
   config: Config,
   controlPlane: ControlPlaneStore | undefined,
   req: http.IncomingMessage
-): Promise<AuthFailure | undefined> {
+): Promise<Admission> {
   const rawLibraryId = req.headers["library-id"];
   const libraryId = Array.isArray(rawLibraryId) ? rawLibraryId[0] : rawLibraryId;
+  const clientAsked = readOnlyRequested(req.headers);
 
   // Refused for everyone, authenticated or not, and before anything else:
   // sanitizeLibraryId would throw on this too, but only once a tool is already
   // running, which surfaces as a 200 carrying a JSON-RPC error rather than as
   // the refusal it is.
   if (libraryId && isReservedLibraryId(libraryId)) {
-    return { reason: "forbidden", status: 403, message: `No access to workspace "${libraryId}"` };
+    return {
+      ok: false,
+      failure: { reason: "forbidden", status: 403, message: `No access to workspace "${libraryId}"` },
+    };
   }
 
   // With auth off, a missing or unknown library-id is still handled downstream
   // as a tool error, which is the long-standing behaviour for a local daemon.
-  if (!controlPlane) return undefined;
+  // There are no grants in this mode, so the client's own header is the only
+  // thing that can make the connection read-only.
+  if (!controlPlane) return { ok: true, readOnly: clientAsked };
 
   const auth = await authenticate(bearerFrom(req.headers.authorization), controlPlane);
-  if (!auth.ok) return auth.failure;
+  if (!auth.ok) return { ok: false, failure: auth.failure };
 
   if (!libraryId) {
-    return { reason: "forbidden", status: 403, message: 'Missing required "library-id" header' };
+    return {
+      ok: false,
+      failure: { reason: "forbidden", status: 403, message: 'Missing required "library-id" header' },
+    };
   }
 
   const allowed = authorizeWorkspace(auth.principal, libraryId);
-  if (!allowed.ok) return allowed.failure;
+  if (!allowed.ok) return { ok: false, failure: allowed.failure };
 
   // Best effort: a failure to record usage must not fail the request.
   void controlPlane.touchKeyUsed(auth.principal.keyId).catch(() => undefined);
-  return undefined;
+  return { ok: true, readOnly: allowed.access === "read" || clientAsked };
 }
 
 async function handleMcpRequest(
@@ -155,8 +176,9 @@ async function handleMcpRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
-  const failure = await denyRequest(config, controlPlane, req);
-  if (failure) {
+  const admission = await admitRequest(config, controlPlane, req);
+  if (!admission.ok) {
+    const { failure } = admission;
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (failure.status === 401) {
       headers["www-authenticate"] = 'Bearer realm="mem-port"';
@@ -169,7 +191,9 @@ async function handleMcpRequest(
   // Stateless mode: a fresh McpServer + transport per request, closing over the
   // library-id-resolved session inside tool handlers. Avoids a class of bugs
   // where a long-lived MCP session receives a different library-id on a later call.
-  const server = buildServer(deps);
+  // It is also what makes the read-only tool set enforceable rather than
+  // advisory: this server is built for this request and discarded after it.
+  const server = buildServer(deps, { readOnly: admission.readOnly });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
   res.on("close", () => {

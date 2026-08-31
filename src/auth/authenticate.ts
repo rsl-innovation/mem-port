@@ -1,4 +1,4 @@
-import type { ControlPlaneStore } from "../interfaces/admin.interface.js";
+import type { AccessLevel, ControlPlaneStore, WorkspaceGrant } from "../interfaces/admin.interface.js";
 import { parseKey, verifyKeySecret } from "./secrets.js";
 
 /** Who a request is, once its credential has been checked. */
@@ -6,8 +6,8 @@ export interface Principal {
   userId: string;
   username: string;
   isAdmin: boolean;
-  /** Workspace slugs this user has been granted. */
-  workspaces: string[];
+  /** Workspaces this user has been granted, each with the level it was granted at. */
+  workspaces: WorkspaceGrant[];
   /** The key record's id, so its last-used stamp can be updated. */
   keyId: string;
 }
@@ -20,6 +20,17 @@ export type AuthFailure =
   | { reason: "forbidden"; status: 403; message: string };
 
 export type AuthResult = { ok: true; principal: Principal } | { ok: false; failure: AuthFailure };
+
+/**
+ * The result of authorizing a principal for one workspace.
+ *
+ * Carries the level as well as the yes, because the caller needs both: the yes
+ * decides whether the request is answered at all, and the level decides which
+ * tools it is answered with.
+ */
+export type AuthzResult =
+  | { ok: true; principal: Principal; access: AccessLevel }
+  | { ok: false; failure: AuthFailure };
 
 /** Pull a bearer token out of an Authorization header. */
 export function bearerFrom(header: string | string[] | undefined): string | undefined {
@@ -83,7 +94,7 @@ export async function authenticate(presented: string | undefined, cp: ControlPla
 }
 
 /**
- * Whether a principal may open a workspace.
+ * Whether a principal may open a workspace, and at what level.
  *
  * Being an admin is NOT sufficient. Admins decide who may reach what; that is
  * a different power from reading the contents, and keeping them apart means a
@@ -91,9 +102,10 @@ export async function authenticate(presented: string | undefined, cp: ControlPla
  * knowledge graph in the deployment. An admin who wants a workspace grants it
  * to themselves, explicitly and visibly.
  */
-export function authorizeWorkspace(principal: Principal, workspaceSlug: string): AuthResult {
-  if (principal.workspaces.includes(workspaceSlug)) {
-    return { ok: true, principal };
+export function authorizeWorkspace(principal: Principal, workspaceSlug: string): AuthzResult {
+  const grant = principal.workspaces.find((g) => g.workspace === workspaceSlug);
+  if (grant) {
+    return { ok: true, principal, access: grant.access };
   }
   return {
     ok: false,

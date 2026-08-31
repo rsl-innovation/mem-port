@@ -192,6 +192,76 @@ describe("managing workspaces and users", () => {
     expect(await useIt(), "grant revoked").toBe(403);
   }, 60_000);
 
+  it("grants read-only access, and switches the level from the same form", async () => {
+    const usersPage = await get("/admin/users");
+    await post("/admin/users", {
+      csrf: csrfFrom(usersPage.body),
+      username: "reader",
+      access: "read",
+    });
+    const reader = await cp.getUserByUsername("reader");
+    expect(reader?.defaultAccess, "the create form sets the user's default level").toBe("read");
+
+    let page = await get(`/admin/users/${encodeURIComponent(reader!.id)}`);
+    const issued = await post(`/admin/users/${encodeURIComponent(reader!.id)}/keys`, {
+      csrf: csrfFrom(page.body),
+      label: "reader laptop",
+    });
+    const key = /<code>(mp_[A-Za-z0-9_-]+)<\/code>/.exec(issued.body)?.[1]!;
+
+    const toolNames = async (): Promise<string[]> => {
+      const res = await fetch(`${BASE}/mcp`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${key}`,
+          "library-id": "acme-eng",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      });
+      const body = await res.text();
+      const line = body.split("\n").find((l) => l.startsWith("data: "));
+      return JSON.parse(line ? line.slice("data: ".length) : body).result.tools.map((t: any) => t.name);
+    };
+
+    // Granting with no explicit level falls back to the user's default, which
+    // is read — never to write, which would hand out more than was configured.
+    page = await get(`/admin/users/${encodeURIComponent(reader!.id)}`);
+    await post(`/admin/users/${encodeURIComponent(reader!.id)}/grants`, {
+      csrf: csrfFrom(page.body),
+      workspace: "acme-eng",
+    });
+    expect(await cp.listWorkspacesForUser(reader!.id)).toEqual([{ workspace: "acme-eng", access: "read" }]);
+    expect(await toolNames()).not.toContain("save_memory");
+
+    // The page shows the level and offers the flip.
+    page = await get(`/admin/users/${encodeURIComponent(reader!.id)}`);
+    expect(page.body).toMatch(/read-only/);
+    expect(page.body).toMatch(/Make read-write/);
+
+    // Flipping it re-posts to the same route, which upserts rather than
+    // duplicating -- and takes effect on the very next MCP request.
+    await post(`/admin/users/${encodeURIComponent(reader!.id)}/grants`, {
+      csrf: csrfFrom(page.body),
+      workspace: "acme-eng",
+      access: "write",
+    });
+    expect(await cp.listWorkspacesForUser(reader!.id)).toEqual([{ workspace: "acme-eng", access: "write" }]);
+    expect(await toolNames()).toContain("save_memory");
+
+    // And the user's default is a separate setting from the grants they hold.
+    page = await get(`/admin/users/${encodeURIComponent(reader!.id)}`);
+    await post(`/admin/users/${encodeURIComponent(reader!.id)}/access`, {
+      csrf: csrfFrom(page.body),
+      access: "write",
+    });
+    expect((await cp.getUserByUsername("reader"))?.defaultAccess).toBe("write");
+    expect(await cp.listWorkspacesForUser(reader!.id), "existing grants are untouched").toEqual([
+      { workspace: "acme-eng", access: "write" },
+    ]);
+  }, 60_000);
+
   it("escapes operator-supplied text rather than rendering it as markup", async () => {
     const usersPage = await get("/admin/users");
     await post("/admin/users", { csrf: csrfFrom(usersPage.body), username: "<img src=x onerror=alert(1)>" });

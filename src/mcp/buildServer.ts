@@ -36,6 +36,23 @@ Proactively call search_memory at the start of a task that could be informed by 
 Don't save: information already derivable from the current codebase/files, one-off task state that's only relevant to this conversation, or anything the user has asked you not to keep.`;
 
 /**
+ * What a read-only connection is told instead.
+ *
+ * The default instructions are almost entirely "proactively call save_memory /
+ * save_skill / save_adr". Handing those to a client that has none of those
+ * tools would send it hunting for something that isn't there and reporting the
+ * failure to the user, so the write half is not softened here — it is removed,
+ * and the recall half is kept.
+ */
+const READ_ONLY_INSTRUCTIONS = `mem-port is a persistent, cross-session knowledge graph for this library-id. This connection is READ-ONLY: you can search and read everything in it, and you cannot change it. There are no save or forget tools, so don't look for them or promise the user that something will be remembered here.
+
+Proactively call search_memory at the start of a task that could be informed by prior context, search_skills at the start of a task that might already have a known procedure, and search_adrs before proposing an approach or re-litigating a technical choice — a superseded ADR still tells you what was already tried and why it was dropped. Check before assuming none of these exist.
+
+This library is shared, and someone else curates it: treat what you find as the team's accumulated context rather than notes from your own past sessions. get_entity, list_episodes, list_skills, list_adrs and get_skill/get_adr fill in the detail behind a search hit.
+
+If the user asks you to remember something here, tell them plainly that this connection cannot write to this library and that the level is set by whoever administers it.`;
+
+/**
  * What every tool needs, in one bag.
  *
  * Previously each `registerX` took its own subset of (root, embeddings,
@@ -49,30 +66,54 @@ export interface ServerDeps {
   dataDir: string;
 }
 
-export function buildServer(deps: ServerDeps): McpServer {
-  const server = new McpServer({ name: "mem-port", version: VERSION }, { instructions: SERVER_INSTRUCTIONS });
+export interface ServerOptions {
+  /**
+   * Withhold every tool that can change the library.
+   *
+   * Not registering a tool is the enforcement, not a hint: the daemon runs MCP
+   * stateless, building a fresh server per HTTP request, so a `tools/call` for
+   * a withheld tool reaches a server that never had it and comes back as an
+   * unknown tool. There is no second server instance, and no session, on which
+   * it could still exist.
+   */
+  readOnly?: boolean;
+}
+
+export function buildServer(deps: ServerDeps, options: ServerOptions = {}): McpServer {
+  const readOnly = options.readOnly ?? false;
+  const server = new McpServer(
+    { name: "mem-port", version: VERSION },
+    { instructions: readOnly ? READ_ONLY_INSTRUCTIONS : SERVER_INSTRUCTIONS }
+  );
 
   // The single ui:// template every read tool points at via _meta.ui.resourceUri.
   registerAppUi(server);
 
-  registerSaveMemory(server, deps);
+  // Reads. export_library is here rather than below because it only reads the
+  // library -- the file it writes is a bundle in the daemon's data dir, and
+  // everything in it is already visible to anyone who can search.
   registerSearchMemory(server, deps);
-  registerSaveEpisode(server, deps);
   registerListEpisodes(server, deps);
   registerGetEntity(server, deps);
-  registerRelateEntities(server, deps);
-  registerForgetMemory(server, deps);
   registerExportLibrary(server, deps);
-  registerImportLibrary(server, deps);
-  registerSaveSkill(server, deps);
   registerSearchSkills(server, deps);
   registerListSkills(server, deps);
   registerGetSkill(server, deps);
-  registerForgetSkill(server, deps);
-  registerSaveAdr(server, deps);
   registerSearchAdrs(server, deps);
   registerListAdrs(server, deps);
   registerGetAdr(server, deps);
+
+  if (readOnly) return server;
+
+  // Writes.
+  registerSaveMemory(server, deps);
+  registerSaveEpisode(server, deps);
+  registerRelateEntities(server, deps);
+  registerForgetMemory(server, deps);
+  registerImportLibrary(server, deps);
+  registerSaveSkill(server, deps);
+  registerForgetSkill(server, deps);
+  registerSaveAdr(server, deps);
   registerForgetAdr(server, deps);
 
   return server;
